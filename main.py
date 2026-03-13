@@ -2,10 +2,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import httpx
-from datetime import datetime, timedelta
+from datetime import datetime
+from bs4 import BeautifulSoup
 
 app = FastAPI()
 
+# Permite que o Frontend no navegador comunique com este Backend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], 
@@ -14,78 +16,97 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-URL_BASE_COMPRAS = "https://dadosabertos.compras.gov.br"
 HEADERS_PADRAO = {
     "Accept": "application/json, text/plain, */*",
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 }
 
-# --- SISTEMA DE CACHE EM MEMÓRIA ---
-# Guarda os últimos resultados válidos para salvar o dia se o governo cair
+# Sistema de Cache em Memória
 cache_dados = {}
 
-async def fetch_governo_com_cache(endpoint: str, params: dict, cache_key: str):
-    url = f"{URL_BASE_COMPRAS}{endpoint}"
-    
+async def fetch_governo_com_cache(url: str, params: dict, cache_key: str, is_pncp=False):
     async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
         try:
             response = await client.get(url, params=params, headers=HEADERS_PADRAO)
             response.raise_for_status()
             dados = response.json()
             
-            # Se deu certo, salva no cache com a data e hora atual
+            # A API do PNCP devolve os itens na chave "data", enquanto o Compras.gov usa "resultado"
+            resultado_final = dados.get("data") if is_pncp else dados.get("resultado", dados)
+
+            # Guarda os dados em cache em caso de queda futura
             cache_dados[cache_key] = {
-                "dados": dados,
+                "dados": resultado_final,
                 "ultima_atualizacao": datetime.now().strftime("%d/%m/%Y às %H:%M:%S")
             }
-            return {"sucesso": True, "cache": False, "resultado": dados["resultado"]}
+            return {"sucesso": True, "cache": False, "resultado": resultado_final}
             
         except Exception as e:
-            print(f"[X] Falha na API do Governo: {e}")
+            print(f"[X] Falha na API governamental: {e}")
             
-            # Se falhou, tenta resgatar do CACHE!
+            # Tenta resgatar do CACHE
             if cache_key in cache_dados:
-                print(f"[!] Governo caiu. Retornando CACHE de {cache_key}")
+                print(f"[!] A usar o CACHE de emergência para {cache_key}")
                 return {
                     "sucesso": True, 
-                    "cache": True, # Avisa o Front-End que é um dado antigo
+                    "cache": True,
                     "ultima_atualizacao": cache_dados[cache_key]["ultima_atualizacao"],
-                    "resultado": cache_dados[cache_key]["dados"]["resultado"]
+                    "resultado": cache_dados[cache_key]["dados"]
                 }
             
-            # Se falhou e não tem cache...
             return JSONResponse(
                 status_code=500, 
-                content={"erro_interno": "Governo fora do ar e nenhum dado salvo no cache ainda."}
+                content={"erro_interno": f"Serviço fora do ar e sem cache: {str(e)}"}
             )
 
 @app.get("/api/materiais")
 async def buscar_materiais(termo: str):
-    endpoint = "/modulo-material/4_consultarItemMaterial"
+    url = "https://dadosabertos.compras.gov.br/modulo-material/4_consultarItemMaterial"
     parametros = {"pagina": 1, "tamanhoPagina": 10, "descricaoItem": termo}
-    # A chave do cache é a própria palavra procurada
-    return await fetch_governo_com_cache(endpoint, parametros, f"catmat_{termo}")
+    return await fetch_governo_com_cache(url, parametros, f"catmat_{termo}")
 
 @app.get("/api/licitacoes")
 async def buscar_licitacoes(data_inicio: str, data_fim: str):
-    endpoint = "/modulo-contratacoes/1_consultarContratacoes_PNCP_14133"
-    parametros = {
-        "pagina": 1, "tamanhoPagina": 10, "unidadeOrgaoUfSigla": "SE",
-        "codigoModalidade": 5, "dataPublicacaoPncpInicial": data_inicio,
-        "dataPublicacaoPncpFinal": data_fim
-    }
-    return await fetch_governo_com_cache(endpoint, parametros, "licitacoes_se")
+    # A usar o endpoint correto do PNCP
+    url = "https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao"
+    
+    # O PNCP exige que as datas não tenham traços (YYYYMMDD)
+    data_ini_formata = data_inicio.replace("-", "")
+    data_fim_formata = data_fim.replace("-", "")
 
-# --- ROTA DO RASPADOR DO DIÁRIO OFICIAL ---
+    parametros = {
+        "dataInicial": data_ini_formata,
+        "dataFinal": data_fim_formata,
+        "uf": "SE",
+        "tamanhoPagina": 10
+    }
+    return await fetch_governo_com_cache(url, parametros, "licitacoes_se", is_pncp=True)
+
 @app.get("/api/diario-oficial")
 async def raspar_diario_oficial():
-    # AQUI ENTRARÁ O SEU CÓDIGO EM PYTHON (BEAUTIFULSOUP)
-    # Por enquanto, usamos dados de teste para validar a interface:
     try:
-        noticias_itps = [
-            {"data": datetime.now().strftime("%d/%m/%Y"), "titulo": "Nomeação de Estagiários - ITPS", "link": "#"},
-            {"data": "Ontem", "titulo": "Aviso de Licitação - Manutenção de Equipamentos ITPS", "link": "#"}
-        ]
+        # Raspador com BeautifulSoup para alimentar o portal
+        url_noticias = "https://itps.se.gov.br/feed/"
+        
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.get(url_noticias)
+            
+            # features="xml" porque estamos a ler um feed estruturado
+            soup = BeautifulSoup(response.content, features="xml")
+            
+            noticias_itps = []
+            # Apanha apenas os 5 resultados mais recentes
+            items = soup.find_all("item", limit=5)
+            
+            for item in items:
+                data_pub = item.pubDate.text if item.pubDate else datetime.now().strftime("%d/%m/%Y")
+                
+                noticias_itps.append({
+                    "data": data_pub[:16], # Recorta o fuso horário da string
+                    "titulo": item.title.text, 
+                    "link": item.link.text
+                })
+
         return {"sucesso": True, "resultado": noticias_itps}
     except Exception as e:
         return JSONResponse(status_code=500, content={"erro_interno": f"Falha no raspador: {e}"})
