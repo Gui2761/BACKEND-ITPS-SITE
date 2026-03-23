@@ -1,78 +1,80 @@
-from fastapi import FastAPI
+import time
+from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-import httpx
-from datetime import datetime
-from bs4 import BeautifulSoup
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], 
-    allow_credentials=True,
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-@app.get("/api/licitacoes")
-async def buscar_licitacoes(data_inicio: str, data_fim: str):
-    # Tratamento rigoroso das datas para evitar Erro 400
-    # Se hoje é 13/03/2026, garantimos que nada passe disso
-    dt_ini = data_inicio.replace("-", "")
-    dt_fim = data_fim.replace("-", "")
+# --- CONFIGURAÇÃO ESPECÍFICA: IOSE (DIÁRIO OFICIAL) ---
+def realizar_scraping_iose():
+    options = Options()
+    options.add_argument("--headless")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
     
-    # URL oficial de consulta do PNCP
-    url = f"https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao"
+    service = Service(ChromeDriverManager().install())
+    driver = webdriver.Chrome(service=service, options=options)
     
-    params = {
-        "dataInicial": dt_ini,
-        "dataFinal": dt_fim,
-        "uf": "SE",
-        "tamanhoPagina": 10
-    }
-    
-    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-        try:
-            response = await client.get(url, params=params)
-            
-            # Se a API do governo der 400, capturamos o motivo real
-            if response.status_code == 400:
-                return JSONResponse(
-                    status_code=400, 
-                    content={"erro": "Requisição Inválida", "detalhe": response.text}
-                )
+    resultados = []
+    try:
+        # A URL já contém o filtro 'q=ITPS' para busca exata
+        url_busca = "https://iose.se.gov.br/buscanova/#/p=1&q=ITPS"
+        driver.get(url_busca)
+        time.sleep(15) # O site do IOSE é pesado e precisa de tempo para o Angular carregar
+        
+        texto_pagina = driver.find_element("tag name", "body").text
+        linhas = texto_pagina.split('\n')
+        
+        for linha in linhas:
+            if "Diário publicado em:" in linha:
+                partes = linha.split(" - ")
+                data_pub = partes[0].replace("Diário publicado em:", "").strip()
+                titulo_pub = " - ".join(partes[1:])
                 
-            response.raise_for_status()
-            dados = response.json()
-            return {"sucesso": True, "resultado": dados.get("data", [])}
-        except Exception as e:
-            print(f"Erro Crítico PNCP: {e}")
-            return JSONResponse(
-                status_code=500, 
-                content={"erro": "Falha na API do Governo", "detalhe": str(e)}
-            )
+                resultados.append({
+                    "data": data_pub,
+                    "titulo": titulo_pub,
+                    "link": url_busca
+                })
+    except Exception as e:
+        print(f"Erro no Scraper: {e}")
+    finally:
+        driver.quit()
+    return resultados
+
+# --- ROTAS SEM DADOS PRESOS ---
 
 @app.get("/api/diario-oficial")
-async def raspar_diario_oficial():
-    try:
-        url = "https://itps.se.gov.br/feed/"
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            r = await client.get(url)
-            soup = BeautifulSoup(r.content, features="xml")
-            items = soup.find_all("item", limit=5)
-            noticias = [{"titulo": i.title.text, "link": i.link.text, "data": i.pubDate.text[:16]} for i in items]
-            return {"sucesso": True, "resultado": noticias}
-    except Exception as e:
-        return {"sucesso": False, "resultado": [], "erro": str(e)}
+async def get_diario():
+    return {"resultado": realizar_scraping_iose()}
+
+@app.get("/api/falabr/manifestacoes")
+async def get_falabr():
+    # Aqui deve entrar a chamada requests.get com o Header 'Authorization: Bearer TOKEN'
+    # conforme a documentação do Fala.BR
+    return {"resultado": []} 
+
+@app.get("/api/licitacoes")
+async def get_licitacoes(data_inicio: str, data_fim: str):
+    # CNPJ do ITPS: 07258529000159
+    # Recomendado usar a API do PNCP: https://pncp.gov.br/api/pncp/v1/contratacoes/...
+    return {"resultado": []}
 
 @app.get("/api/materiais")
-async def buscar_materiais(termo: str):
-    url = "https://dadosabertos.compras.gov.br/modulo-material/4_consultarItemMaterial"
-    params = {"pagina": 1, "tamanhoPagina": 10, "descricaoItem": termo}
-    async with httpx.AsyncClient(timeout=20.0) as client:
-        try:
-            r = await client.get(url, params=params)
-            return {"sucesso": True, "resultado": r.json().get("resultado", [])}
-        except:
-            return {"sucesso": False, "resultado": []}
+async def get_materiais(termo: str = Query(...)):
+    # Esta rota deve consultar o teu banco de dados ou API do Compras.gov.br
+    return {"resultado": []}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="127.0.0.1", port=8000)
