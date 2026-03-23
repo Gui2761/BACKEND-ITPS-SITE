@@ -7,9 +7,12 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 from datetime import datetime, timedelta
-
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.by import By
 app = FastAPI()
 
+# Configuração de CORS para permitir que o seu site (Frontend) aceda à API
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -17,7 +20,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- CONFIGURAÇÃO: DIÁRIO OFICIAL (IOSE) ---
+# --- SCRAPING: DIÁRIO OFICIAL (IOSE) ---
 def realizar_scraping_iose():
     options = Options()
     options.add_argument("--headless")
@@ -39,58 +42,113 @@ def realizar_scraping_iose():
                 titulo_pub = " - ".join(partes[1:])
                 resultados.append({"data": data_pub, "titulo": titulo_pub, "link": url_busca})
     except Exception as e:
-        print(f"Erro Scraper: {e}")
+        print(f"Erro Scraper IOSE: {e}")
     finally:
         driver.quit()
     return resultados[:10]
 
-# --- ROTAS DINÂMICAS ---
+# --- ROTAS DA API ---
 
 @app.get("/api/diario-oficial")
 async def get_diario():
     return {"resultado": realizar_scraping_iose()}
 
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.by import By
+
+import time
+
+import time
+from selenium.webdriver.common.by import By
+
 @app.get("/api/licitacoes")
 async def get_licitacoes():
-    """Consulta PNCP: Busca automática dos últimos 30 dias para o ITPS"""
-    cnpj_itps = "07258529000159"
-    hoje = datetime.now()
-    inicio = (hoje - timedelta(days=30)).strftime("%Y%m%d")
-    fim = hoje.strftime("%Y%m%d")
+    """Captura Atas buscando pelos elementos corretos (links <a>)"""
+    options = Options()
     
-    # Endpoint oficial de consulta por data de publicação
-    url = f"https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao?dataInicial={inicio}&dataFinal={fim}&cnpj={cnpj_itps}&pagina=1&tamanhoPagina=10"
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--window-size=1920,1080")
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option('useAutomationExtension', False)
+    
+    service = Service(ChromeDriverManager().install())
+    driver = webdriver.Chrome(service=service, options=options)
+    driver.minimize_window() 
+    
+    resultados = []
     
     try:
-        response = requests.get(url, timeout=15)
-        if response.status_code == 200:
-            dados = response.json().get('data', [])
-            return {"resultado": [{
-                "orgao": item['orgaoEntidade']['razaoSocial'],
-                "objeto": item['objetoCompra'],
-                "valor": item['valorTotalEstimado']
-            } for item in dados]}
-    except: pass
-    return {"resultado": []}
+        url_atas = "https://www.pncp.gov.br/app/atas?q=itps&status=vigente&pagina=1"
+        print("1. Acessando PNCP...")
+        driver.get(url_atas)
+        
+        print("2. Aguardando 15 segundos para renderização...")
+        time.sleep(15)
+        
+        # O SEGREDO ESTÁ AQUI: Buscar por tags <a> (links), que é como o PNCP estrutura a lista de Atas
+        elementos = driver.find_elements(By.TAG_NAME, "a")
+        print(f"3. Varrendo {len(elementos)} links na página...")
+        
+        for index, el in enumerate(elementos):
+            texto = el.text
+            
+            # Condição para achar o bloco da Ata
+            if "Id ata PNCP:" in texto or "Extrator" in texto or "ESTADO DE SERGIPE" in texto:
+                print("   [!] Ata verdadeira encontrada!")
+                linhas = texto.split('\n')
+                
+                # Pegamos o link real já pronto direto do HTML!
+                link_direto = el.get_attribute("href")
+                if not link_direto:
+                    link_direto = url_atas
+
+                # Evita pegar linhas vazias como título
+                titulo = linhas[0] if len(linhas) > 0 and linhas[0].strip() != "" else "Ata de Registro de Preços"
+
+                resultados.append({
+                    "orgao": "ITPS / SERGIPE",
+                    "objeto": titulo,
+                    "valor": 0,
+                    "link": link_direto
+                })
+                
+        print(f"4. Processamento concluído. {len(resultados)} atas extraídas.")
+        
+    except Exception as e:
+        print(f"ERRO NO SCRAPING: {str(e)}")
+    finally:
+        driver.quit()
+        
+    # Limpa duplicatas (às vezes o site renderiza o mesmo link 2x em telas grandes)
+    resultados_unicos = []
+    links_vistos = set()
+    for r in resultados:
+        if r["link"] not in links_vistos:
+            resultados_unicos.append(r)
+            links_vistos.add(r["link"])
+            
+    return {"resultado": resultados_unicos}
 
 @app.get("/api/materiais")
 async def get_materiais(termo: str = Query(...)):
-    """API Compras.gov.br: Consulta real ao catálogo SIASG (CATMAT)"""
-    # Endpoint oficial para pesquisa por descrição
+    """Consulta o catálogo oficial CATMAT (SIASG)"""
     url = f"https://compras.dados.gov.br/materiais/v1/materiais.json?descricao={termo}"
     try:
         response = requests.get(url, timeout=10)
         if response.status_code == 200:
             materiais = response.json().get("_embedded", {}).get("materiais", [])
-            return {"resultado": [{"codigoItem": m["codigo"], "descricaoItem": m["descricao"]} for m in materiais]}
+            return {"resultado": [{
+                "codigoItem": m.get("codigo"),
+                "descricaoItem": m.get("descricao")
+            } for m in materiais]}
     except: pass
     return {"resultado": []}
 
 @app.get("/api/falabr/manifestacoes")
 async def get_falabr():
-    """Estrutura oficial Fala.BR (OAuth 2.0)"""
-    # URL para Token: https://falabr.cgu.gov.br/oauth/token
-    # Exige: grant_type=password, client_id, client_secret, username e password
+    """Esqueleto para integração futura com Fala.BR"""
     return {"resultado": []}
 
 if __name__ == "__main__":
