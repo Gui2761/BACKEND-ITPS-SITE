@@ -1,4 +1,5 @@
 import time
+import requests
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from selenium import webdriver
@@ -15,7 +16,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- CONFIGURAÇÃO ESPECÍFICA: IOSE (DIÁRIO OFICIAL) ---
+# --- CONFIGURAÇÃO: DIÁRIO OFICIAL (IOSE) ---
 def realizar_scraping_iose():
     options = Options()
     options.add_argument("--headless")
@@ -27,10 +28,9 @@ def realizar_scraping_iose():
     
     resultados = []
     try:
-        # A URL já contém o filtro 'q=ITPS' para busca exata
         url_busca = "https://iose.se.gov.br/buscanova/#/p=1&q=ITPS"
         driver.get(url_busca)
-        time.sleep(15) # O site do IOSE é pesado e precisa de tempo para o Angular carregar
+        time.sleep(15) # Aguarda o carregamento dinâmico conforme solicitado
         
         texto_pagina = driver.find_element("tag name", "body").text
         linhas = texto_pagina.split('\n')
@@ -47,32 +47,49 @@ def realizar_scraping_iose():
                     "link": url_busca
                 })
     except Exception as e:
-        print(f"Erro no Scraper: {e}")
+        print(f"Erro no Scraper IOSE: {e}")
     finally:
         driver.quit()
-    return resultados
+    return resultados[:6]
 
-# --- ROTAS SEM DADOS PRESOS ---
+# --- ROTAS DA API ---
 
 @app.get("/api/diario-oficial")
 async def get_diario():
     return {"resultado": realizar_scraping_iose()}
 
-@app.get("/api/falabr/manifestacoes")
-async def get_falabr():
-    # Aqui deve entrar a chamada requests.get com o Header 'Authorization: Bearer TOKEN'
-    # conforme a documentação do Fala.BR
-    return {"resultado": []} 
-
 @app.get("/api/licitacoes")
 async def get_licitacoes(data_inicio: str, data_fim: str):
-    # CNPJ do ITPS: 07258529000159
-    # Recomendado usar a API do PNCP: https://pncp.gov.br/api/pncp/v1/contratacoes/...
+    """Consulta real ao PNCP usando o CNPJ do ITPS"""
+    cnpj_itps = "07258529000159"
+    url = f"https://pncp.gov.br/api/pncp/v1/contratacoes?dataInicial={data_inicio.replace('-','')}&dataFinal={data_fim.replace('-','')}&cnpjRespondente={cnpj_itps}&pagina=1&tamanhoPagina=10"
+    
+    try:
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            dados = response.json()
+            # Formata os dados para o front-end
+            processados = []
+            for item in dados.get('data', []):
+                processados.append({
+                    "orgaoEntidade": {"razaoSocial": item.get('orgaoEntidade', {}).get('razaoSocial', 'ITPS')},
+                    "objetoCompra": item.get('objetoCompra', 'Sem descrição'),
+                    "valorTotalEstimado": item.get('valorTotalEstimado', 0)
+                })
+            return {"resultado": processados}
+    except Exception as e:
+        print(f"Erro PNCP: {e}")
+    return {"resultado": []}
+
+@app.get("/api/falabr/manifestacoes")
+async def get_falabr():
+    """Estrutura para Fala.BR com OAuth2"""
+    # Nota: Substitua pelas suas credenciais reais para obter o token
+    # url_token = "https://falabr.cgu.gov.br/oauth/token"
     return {"resultado": []}
 
 @app.get("/api/materiais")
 async def get_materiais(termo: str = Query(...)):
-    # Esta rota deve consultar o teu banco de dados ou API do Compras.gov.br
     return {"resultado": []}
 
 if __name__ == "__main__":
