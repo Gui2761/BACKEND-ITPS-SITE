@@ -1,3 +1,4 @@
+import os
 import time
 import requests
 from fastapi import FastAPI, Query
@@ -10,6 +11,16 @@ from datetime import datetime, timedelta
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
+
+# --- CONFIGURAÇÃO DE PROXY DO ITPS ---
+# A senha 'S@ndes2026++' está convertida para 'S%40ndes2026%2B%2B' para funcionar na URL
+proxy_url = "http://itamar.sandes:S%40ndes2026%2B%2B@proxy.itps.gov-se:8080"
+
+os.environ['HTTP_PROXY'] = proxy_url
+os.environ['HTTPS_PROXY'] = proxy_url
+os.environ['http_proxy'] = proxy_url
+os.environ['https_proxy'] = proxy_url
+
 app = FastAPI()
 
 # Configuração de CORS para permitir que o seu site (Frontend) aceda à API
