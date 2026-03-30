@@ -6,6 +6,7 @@ import re
 import html 
 from datetime import datetime
 
+# Desativa os avisos vermelhos de SSL no terminal gerados pelo Proxy
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,6 +17,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.by import By
 
 # --- CONFIGURAÇÃO DE PROXY DO ITPS ---
+# AVISO PARA TI: Alterar este proxy para um usuário de serviço genérico na hora de subir para produção
 proxy_url = "http://itamar.sandes:S%40ndes2026%2B%2B@proxy.itps.gov-se:8080"
 
 os.environ['HTTP_PROXY'] = proxy_url
@@ -34,6 +36,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# --- VARIÁVEIS DE CACHE GLOBAL ---
+cache_iose = {"dados": [], "ultima_atualizacao": 0}
+TEMPO_CACHE = 3600  # O robô do Selenium só roda 1 vez por hora (3600 segundos)
+
 # --- SCRAPING: DIÁRIO OFICIAL (IOSE) ---
 def realizar_scraping_iose():
     options = Options()
@@ -43,27 +49,86 @@ def realizar_scraping_iose():
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=options)
     resultados = []
+    
+    # Filtro automático pelo mês e ano atuais
+    agora = datetime.now()
+    mes_atual = f"{agora.month:02d}"
+    ano_atual = str(agora.year)
+    filtro_data = f"/{mes_atual}/{ano_atual}" 
+    
     try:
         url_busca = "https://iose.se.gov.br/buscanova/#/p=1&q=ITPS"
         driver.get(url_busca)
-        time.sleep(15) 
-        texto_pagina = driver.find_element(By.TAG_NAME, "body").text
-        linhas = texto_pagina.split('\n')
-        for linha in linhas:
-            if "Diário publicado em:" in linha:
-                partes = linha.split(" - ")
-                data_pub = partes[0].replace("Diário publicado em:", "").strip()
-                titulo_pub = " - ".join(partes[1:])
-                resultados.append({"data": data_pub, "titulo": titulo_pub, "link": url_busca})
+        time.sleep(15) # Espera o site do governo carregar
+        
+        # TÁTICA NOVA: Achar os links (botões) primeiro
+        links = driver.find_elements(By.XPATH, "//a[contains(@href, 'ver-flip')]")
+        
+        for link in links:
+            try:
+                href = link.get_attribute("href")
+                if not href: continue
+                
+                # Sobe na estrutura do site (até 5 níveis) para encontrar a "caixa" que envolve o botão e o texto
+                container = link
+                texto_caixa = ""
+                for _ in range(5):
+                    container = container.find_element(By.XPATH, "..")
+                    if "Diário publicado em:" in container.text:
+                        texto_caixa = container.text
+                        break
+                
+                if texto_caixa:
+                    # Achou a caixa! Agora pega a linha exata da data
+                    linhas = texto_caixa.split('\n')
+                    for linha in linhas:
+                        if "Diário publicado em:" in linha:
+                            partes = linha.split(" - ")
+                            data_pub = partes[0].replace("Diário publicado em:", "").strip()
+                            
+                            # Verifica se é do mês atual (Filtro)
+                            if data_pub.endswith(filtro_data):
+                                titulo_pub = " - ".join(partes[1:])
+                                
+                                # A sua ideia: Adiciona o ?find=ITPS para já cair grifado no PDF
+                                link_direto = href
+                                if "?find=" not in link_direto:
+                                    link_direto = f"{link_direto}?find=ITPS"
+                                    
+                                # Evita itens duplicados (caso o site tenha 2 botões iguais pro mesmo diário)
+                                if not any(r['link'] == link_direto for r in resultados):
+                                    resultados.append({"data": data_pub, "titulo": titulo_pub, "link": link_direto})
+                            break # Já achou a data nesta caixa, pula pro próximo botão
+            except Exception:
+                # Se um botão específico der erro, ignora e vai pro próximo sem travar o código
+                continue
+                    
     except Exception as e:
         print(f"Erro Scraper IOSE: {e}")
     finally:
         driver.quit()
+        
     return resultados[:10]
 
 @app.get("/api/diario-oficial")
 async def get_diario():
-    return {"resultado": realizar_scraping_iose()}
+    agora = time.time()
+    
+    # Se temos dados guardados e passou menos de 1 hora, devolve o Cache instantaneamente
+    if cache_iose["dados"] and (agora - cache_iose["ultima_atualizacao"] < TEMPO_CACHE):
+        print("Entregando Diário Oficial direto da memória (CACHE) - Super rápido!")
+        return {"resultado": cache_iose["dados"]}
+        
+    # Se o cache estiver vazio ou velho, inicia o robô pesado
+    print("Iniciando o Robô Chrome para ler o Diário Oficial...")
+    resultados = realizar_scraping_iose()
+    
+    # Atualiza a memória com os dados novos para os próximos usuários
+    if resultados: 
+        cache_iose["dados"] = resultados
+        cache_iose["ultima_atualizacao"] = agora
+        
+    return {"resultado": resultados}
 
 
 # --- API: NOTÍCIAS DO ITPS (TRUQUE DO OPENGRAPH) ---
@@ -94,6 +159,7 @@ async def get_noticias():
                 match_l = re.search(r'<link>(.*?)</link>', item_limpo)
                 if match_l: link = match_l.group(1).strip()
                 
+                # Visita a página da notícia e pega a foto de capa (og:image)
                 imagem_url = "images/Itps.png"
                 if link.startswith("http"):
                     try:
@@ -135,4 +201,5 @@ async def get_noticias():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    # AVISO PARA TI: O host 0.0.0.0 permite que o servidor seja acessado por outras máquinas na rede local
+    uvicorn.run(app, host="0.0.0.0", port=8000)
