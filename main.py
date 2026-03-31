@@ -17,8 +17,8 @@ from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.by import By
 
 # --- CONFIGURAÇÃO DE PROXY DO ITPS ---
-# AVISO PARA TI: Alterar este proxy para um usuário de serviço genérico na hora de subir para produção
-proxy_url = "http://itamar.sandes:S%40ndes2026%2B%2B@proxy.itps.gov-se:8080"
+# Login genérico de serviço (Auditório) para a API acessar a internet
+proxy_url = "http://auditorio.itps:auditorio2023@proxy.itps.gov-se:8080"
 
 os.environ['HTTP_PROXY'] = proxy_url
 os.environ['HTTPS_PROXY'] = proxy_url
