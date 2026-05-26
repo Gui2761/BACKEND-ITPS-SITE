@@ -6,4 +6,7 @@ services:
     container_name: backend-itps
     ports:
       - "8000:8000"
+    volumes:
+      - "//172.23.6.7/ageplan/Banco de contratos:/app/db_contratos"
+      - "//172.23.6.7/gerh/1- COAPE/FolhaITPS_Dados:/app/db_folha"
     restart: unless-stopped
