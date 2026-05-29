@@ -4,7 +4,8 @@ import requests
 import urllib3
 import re
 import html 
-import sqlite3
+import psycopg2
+import psycopg2.extras
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
@@ -20,15 +21,14 @@ from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.by import By
 
 # --- CONFIGURAÇÃO DE PROXY DO ITPS ---
-# Login genérico de serviço (Auditório) para a API acessar a internet
 proxy_url = "http://auditorio.itps:auditorio2023@proxy.itps.gov-se:8080"
 
 os.environ['HTTP_PROXY'] = proxy_url
 os.environ['HTTPS_PROXY'] = proxy_url
 os.environ['http_proxy'] = proxy_url
 os.environ['https_proxy'] = proxy_url
-os.environ['NO_PROXY'] = 'localhost,127.0.0.1,::1,itps.se.gov.br'
-os.environ['no_proxy'] = 'localhost,127.0.0.1,::1,itps.se.gov.br'
+os.environ['NO_PROXY'] = 'localhost,127.0.0.1,::1,itps.se.gov.br,172.23.6.109'
+os.environ['no_proxy'] = 'localhost,127.0.0.1,::1,itps.se.gov.br,172.23.6.109'
 
 app = FastAPI()
 
@@ -38,6 +38,35 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# --- CONFIGURAÇÕES DE CONEXÃO POSTGRES ---
+PG_HOST = "172.23.6.109"
+PG_PORT = 5432
+PG_USER = "geinform"
+PG_PASSWORD = "intr@bd109"
+PG_DB = "bd_intranet"
+
+def get_contratos_db():
+    conn = psycopg2.connect(
+        host=PG_HOST,
+        port=PG_PORT,
+        user=PG_USER,
+        password=PG_PASSWORD,
+        database=PG_DB,
+        cursor_factory=psycopg2.extras.RealDictCursor
+    )
+    return conn
+
+def get_folha_db():
+    conn = psycopg2.connect(
+        host=PG_HOST,
+        port=PG_PORT,
+        user=PG_USER,
+        password=PG_PASSWORD,
+        database=PG_DB,
+        cursor_factory=psycopg2.extras.RealDictCursor
+    )
+    return conn
 
 # --- VARIÁVEIS DE CACHE GLOBAL ---
 cache_iose = {"dados": [], "ultima_atualizacao": 0}
@@ -64,7 +93,6 @@ def realizar_scraping_iose():
         driver.get(url_busca)
         time.sleep(15) # Espera o site do governo carregar
         
-        # TÁTICA NOVA: Achar os links (botões) primeiro
         links = driver.find_elements(By.XPATH, "//a[contains(@href, 'ver-flip')]")
         
         for link in links:
@@ -72,7 +100,6 @@ def realizar_scraping_iose():
                 href = link.get_attribute("href")
                 if not href: continue
                 
-                # Sobe na estrutura do site (até 5 níveis) para encontrar a "caixa" que envolve o botão e o texto
                 container = link
                 texto_caixa = ""
                 for _ in range(5):
@@ -82,28 +109,23 @@ def realizar_scraping_iose():
                         break
                 
                 if texto_caixa:
-                    # Achou a caixa! Agora pega a linha exata da data
                     linhas = texto_caixa.split('\n')
                     for linha in linhas:
                         if "Diário publicado em:" in linha:
                             partes = linha.split(" - ")
                             data_pub = partes[0].replace("Diário publicado em:", "").strip()
                             
-                            # Verifica se é do mês atual (Filtro)
                             if data_pub.endswith(filtro_data):
                                 titulo_pub = " - ".join(partes[1:])
                                 
-                                # A sua ideia: Adiciona o ?find=ITPS para já cair grifado no PDF
                                 link_direto = href
                                 if "?find=" not in link_direto:
                                     link_direto = f"{link_direto}?find=ITPS"
                                     
-                                # Evita itens duplicados (caso o site tenha 2 botões iguais pro mesmo diário)
                                 if not any(r['link'] == link_direto for r in resultados):
                                     resultados.append({"data": data_pub, "titulo": titulo_pub, "link": link_direto})
-                            break # Já achou a data nesta caixa, pula pro próximo botão
+                            break
             except Exception:
-                # Se um botão específico der erro, ignora e vai pro próximo sem travar o código
                 continue
                     
     except Exception as e:
@@ -117,16 +139,13 @@ def realizar_scraping_iose():
 async def get_diario():
     agora = time.time()
     
-    # Se temos dados guardados e passou menos de 1 hora, devolve o Cache instantaneamente
     if cache_iose["dados"] and (agora - cache_iose["ultima_atualizacao"] < TEMPO_CACHE):
         print("Entregando Diário Oficial direto da memória (CACHE) - Super rápido!")
         return {"resultado": cache_iose["dados"]}
         
-    # Se o cache estiver vazio ou velho, inicia o robô pesado
     print("Iniciando o Robô Chrome para ler o Diário Oficial...")
     resultados = realizar_scraping_iose()
     
-    # Atualiza a memória com os dados novos para os próximos usuários
     if resultados: 
         cache_iose["dados"] = resultados
         cache_iose["ultima_atualizacao"] = agora
@@ -162,7 +181,6 @@ async def get_noticias():
                 match_l = re.search(r'<link>(.*?)</link>', item_limpo)
                 if match_l: link = match_l.group(1).strip()
                 
-                # Visita a página da notícia e pega a foto de capa (og:image)
                 imagem_url = "images/Itps.png"
                 if link.startswith("http"):
                     try:
@@ -203,31 +221,7 @@ async def get_noticias():
     return {"resultado": []}
 
 
-# ==============================================================================
-# --- EXTENSÃO: PROXY DE BANCO DE DADOS PARA CONTRATOS E FOLHA DE PAGAMENTO ---
-# ==============================================================================
-
-# Detecção automática: Se estiver no Docker (Linux) usa caminhos mapeados, senão caminhos de rede Windows
-if os.path.exists("/app/db_contratos") or os.name == 'posix':
-    DB_CONTRATOS_PATH = "/app/db_contratos/banco_contratos.db"
-    DB_FOLHA_PATH = "/app/db_folha/folha_itps_v8_rh_sync.db"
-else:
-    DB_CONTRATOS_PATH = r"\\172.23.6.7\ageplan\Banco de contratos\banco_contratos.db"
-    DB_FOLHA_PATH = r"\\172.23.6.7\gerh\1- COAPE\FolhaITPS_Dados\folha_itps_v8_rh_sync.db"
-
-def get_contratos_db():
-    conn = sqlite3.connect(DB_CONTRATOS_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-def get_folha_db():
-    conn = sqlite3.connect(DB_FOLHA_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
 # --- MODELOS PYDANTIC: CONTRATOS ---
-
 class ContratosLoginRequest(BaseModel):
     username: str
     password: str
@@ -254,13 +248,13 @@ def contratos_login(req: ContratosLoginRequest):
     try:
         conn = get_contratos_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT id, username, name, role FROM users WHERE username = ? AND password = ?", (req.username, req.password))
+        cursor.execute("SELECT id, username, name, role FROM contratos.users WHERE username = %s AND password = %s", (req.username, req.password))
         user = cursor.fetchone()
         conn.close()
         if user:
             return dict(user)
         raise HTTPException(status_code=401, detail="Usuário ou senha incorretos")
-    except sqlite3.Error as e:
+    except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro de Banco de Dados: {str(e)}")
 
 @app.get("/api/contratos")
@@ -268,11 +262,11 @@ def contratos_listar():
     try:
         conn = get_contratos_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM contratos ORDER BY id DESC")
+        cursor.execute("SELECT * FROM contratos.contratos ORDER BY id DESC")
         contratos = [dict(row) for row in cursor.fetchall()]
         conn.close()
         return {"contratos": contratos}
-    except sqlite3.Error as e:
+    except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro de Banco de Dados: {str(e)}")
 
 @app.post("/api/contratos")
@@ -281,14 +275,14 @@ def contratos_criar(c: ContratoModel):
         conn = get_contratos_db()
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO contratos (instituicao, tipo, objetivo, valor, valor_gasto, prazo, caminho_arquivo) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO contratos.contratos (instituicao, tipo, objetivo, valor, valor_gasto, prazo, caminho_arquivo) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
             (c.instituicao, c.tipo, c.objetivo, c.valor, c.valor_gasto, c.prazo, c.caminho_arquivo)
         )
+        new_id = cursor.fetchone()['id']
         conn.commit()
-        new_id = cursor.lastrowid
         conn.close()
         return {"id": new_id, "success": True}
-    except sqlite3.Error as e:
+    except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro de Banco de Dados: {str(e)}")
 
 @app.put("/api/contratos/{id}")
@@ -297,13 +291,13 @@ def contratos_atualizar(id: int, c: ContratoModel):
         conn = get_contratos_db()
         cursor = conn.cursor()
         cursor.execute(
-            "UPDATE contratos SET instituicao = ?, tipo = ?, objetivo = ?, valor = ?, valor_gasto = ?, prazo = ?, caminho_arquivo = ? WHERE id = ?",
+            "UPDATE contratos.contratos SET instituicao = %s, tipo = %s, objetivo = %s, valor = %s, valor_gasto = %s, prazo = %s, caminho_arquivo = %s WHERE id = %s",
             (c.instituicao, c.tipo, c.objetivo, c.valor, c.valor_gasto, c.prazo, c.caminho_arquivo, id)
         )
         conn.commit()
         conn.close()
         return {"success": True}
-    except sqlite3.Error as e:
+    except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro de Banco de Dados: {str(e)}")
 
 @app.delete("/api/contratos/{id}")
@@ -311,11 +305,11 @@ def contratos_deletar(id: int):
     try:
         conn = get_contratos_db()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM contratos WHERE id = ?", (id,))
+        cursor.execute("DELETE FROM contratos.contratos WHERE id = %s", (id,))
         conn.commit()
         conn.close()
         return {"success": True}
-    except sqlite3.Error as e:
+    except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro de Banco de Dados: {str(e)}")
 
 # Categorias
@@ -324,11 +318,11 @@ def contratos_categories_listar():
     try:
         conn = get_contratos_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM categories ORDER BY name ASC")
+        cursor.execute("SELECT * FROM contratos.categories ORDER BY name ASC")
         categories = [dict(row) for row in cursor.fetchall()]
         conn.close()
         return {"categories": categories}
-    except sqlite3.Error as e:
+    except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro de Banco de Dados: {str(e)}")
 
 @app.post("/api/contratos/categories")
@@ -336,14 +330,21 @@ def contratos_categories_criar(cat: CategoryModel):
     try:
         conn = get_contratos_db()
         cursor = conn.cursor()
-        cursor.execute(
-            "INSERT OR IGNORE INTO categories (name, color, 'group') VALUES (?, ?, ?)",
-            (cat.name, cat.color, cat.group)
-        )
-        conn.commit()
+        
+        # Duplicidade tratada via verificação elegante em Python
+        cursor.execute("SELECT 1 FROM contratos.categories WHERE name = %s", (cat.name,))
+        exists = cursor.fetchone()
+        
+        if not exists:
+            cursor.execute(
+                "INSERT INTO contratos.categories (name, color, \"group\") VALUES (%s, %s, %s)",
+                (cat.name, cat.color, cat.group)
+            )
+            conn.commit()
+            
         conn.close()
         return {"success": True}
-    except sqlite3.Error as e:
+    except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro de Banco de Dados: {str(e)}")
 
 @app.put("/api/contratos/categories/{id}")
@@ -352,13 +353,13 @@ def contratos_categories_atualizar(id: int, cat: CategoryModel):
         conn = get_contratos_db()
         cursor = conn.cursor()
         cursor.execute(
-            "UPDATE categories SET name = ?, color = ?, 'group' = ? WHERE id = ?",
+            "UPDATE contratos.categories SET name = %s, color = %s, \"group\" = %s WHERE id = %s",
             (cat.name, cat.color, cat.group, id)
         )
         conn.commit()
         conn.close()
         return {"success": True}
-    except sqlite3.Error as e:
+    except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro de Banco de Dados: {str(e)}")
 
 @app.delete("/api/contratos/categories/{name}")
@@ -366,11 +367,11 @@ def contratos_categories_deletar(name: str):
     try:
         conn = get_contratos_db()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM categories WHERE name = ?", (name,))
+        cursor.execute("DELETE FROM contratos.categories WHERE name = %s", (name,))
         conn.commit()
         conn.close()
         return {"success": True}
-    except sqlite3.Error as e:
+    except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro de Banco de Dados: {str(e)}")
 
 
@@ -458,13 +459,13 @@ def folha_login(req: FolhaLoginRequest):
     try:
         conn = get_folha_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT id, usuario, permissao FROM usuarios WHERE usuario = ? AND senha = ?", (req.usuario, req.senha))
+        cursor.execute("SELECT id, usuario, permissao FROM folha.usuarios WHERE usuario = %s AND senha = %s", (req.usuario, req.senha))
         user = cursor.fetchone()
         conn.close()
         if user:
             return dict(user)
         raise HTTPException(status_code=401, detail="Usuário ou senha incorretos")
-    except sqlite3.Error as e:
+    except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro de Banco de Dados: {str(e)}")
 
 @app.get("/api/folha/funcionarios")
@@ -472,11 +473,11 @@ def folha_funcionarios_listar():
     try:
         conn = get_folha_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM funcionarios ORDER BY nome ASC")
+        cursor.execute("SELECT * FROM folha.funcionarios ORDER BY nome ASC")
         funcionarios = [dict(row) for row in cursor.fetchall()]
         conn.close()
         return {"funcionarios": funcionarios}
-    except sqlite3.Error as e:
+    except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro de Banco de Dados: {str(e)}")
 
 @app.post("/api/folha/funcionarios")
@@ -485,14 +486,14 @@ def folha_funcionarios_criar(f: FuncionarioModel):
         conn = get_folha_db()
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO funcionarios (nome, cpf, rg, vinculo, banco, agencia, conta, cargo_nome, locacao, percentual, valor_sipes, pensao, outros, acrescimos, tem_inss, tem_irrf, irrf_sipes_real, irrf_manual, dias_trabalhados, previdencia_rpps) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO folha.funcionarios (nome, cpf, rg, vinculo, banco, agencia, conta, cargo_nome, locacao, percentual, valor_sipes, pensao, outros, acrescimos, tem_inss, tem_irrf, irrf_sipes_real, irrf_manual, dias_trabalhados, previdencia_rpps) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
             (f.nome, f.cpf, f.rg, f.vinculo, f.banco, f.agencia, f.conta, f.cargo_nome, f.locacao, f.percentual, f.valor_sipes, f.pensao, f.outros, f.acrescimos, f.tem_inss, f.tem_irrf, f.irrf_sipes_real, f.irrf_manual, f.dias_trabalhados, f.previdencia_rpps)
         )
+        new_id = cursor.fetchone()['id']
         conn.commit()
-        new_id = cursor.lastrowid
         conn.close()
         return {"id": new_id, "success": True}
-    except sqlite3.Error as e:
+    except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro de Banco de Dados: {str(e)}")
 
 @app.put("/api/folha/funcionarios/{id}")
@@ -501,13 +502,13 @@ def folha_funcionarios_atualizar(id: int, f: FuncionarioModel):
         conn = get_folha_db()
         cursor = conn.cursor()
         cursor.execute(
-            "UPDATE funcionarios SET nome = ?, cpf = ?, rg = ?, vinculo = ?, banco = ?, agencia = ?, conta = ?, cargo_nome = ?, locacao = ?, percentual = ?, valor_sipes = ?, pensao = ?, outros = ?, acrescimos = ?, tem_inss = ?, tem_irrf = ?, irrf_sipes_real = ?, irrf_manual = ?, dias_trabalhados = ?, previdencia_rpps = ? WHERE id = ?",
+            "UPDATE folha.funcionarios SET nome = %s, cpf = %s, rg = %s, vinculo = %s, banco = %s, agencia = %s, conta = %s, cargo_nome = %s, locacao = %s, percentual = %s, valor_sipes = %s, pensao = %s, outros = %s, acrescimos = %s, tem_inss = %s, tem_irrf = %s, irrf_sipes_real = %s, irrf_manual = %s, dias_trabalhados = %s, previdencia_rpps = %s WHERE id = %s",
             (f.nome, f.cpf, f.rg, f.vinculo, f.banco, f.agencia, f.conta, f.cargo_nome, f.locacao, f.percentual, f.valor_sipes, f.pensao, f.outros, f.acrescimos, f.tem_inss, f.tem_irrf, f.irrf_sipes_real, f.irrf_manual, f.dias_trabalhados, f.previdencia_rpps, id)
         )
         conn.commit()
         conn.close()
         return {"success": True}
-    except sqlite3.Error as e:
+    except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro de Banco de Dados: {str(e)}")
 
 @app.delete("/api/folha/funcionarios/{id}")
@@ -515,11 +516,11 @@ def folha_funcionarios_deletar(id: int):
     try:
         conn = get_folha_db()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM funcionarios WHERE id = ?", (id,))
+        cursor.execute("DELETE FROM folha.funcionarios WHERE id = %s", (id,))
         conn.commit()
         conn.close()
         return {"success": True}
-    except sqlite3.Error as e:
+    except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro de Banco de Dados: {str(e)}")
 
 # Cargos
@@ -528,11 +529,11 @@ def folha_cargos_listar():
     try:
         conn = get_folha_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM cargos ORDER BY nome ASC")
+        cursor.execute("SELECT * FROM folha.cargos ORDER BY nome ASC")
         cargos = [dict(row) for row in cursor.fetchall()]
         conn.close()
         return {"cargos": cargos}
-    except sqlite3.Error as e:
+    except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro de Banco de Dados: {str(e)}")
 
 @app.post("/api/folha/cargos")
@@ -541,14 +542,14 @@ def folha_cargos_criar(c: CargoModel):
         conn = get_folha_db()
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO cargos (nome, locacao, percentual_padrao) VALUES (?, ?, ?)",
+            "INSERT INTO folha.cargos (nome, locacao, percentual_padrao) VALUES (%s, %s, %s) RETURNING id",
             (c.nome, c.locacao, c.percentual_padrao)
         )
+        new_id = cursor.fetchone()['id']
         conn.commit()
-        new_id = cursor.lastrowid
         conn.close()
         return {"id": new_id, "success": True}
-    except sqlite3.Error as e:
+    except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro de Banco de Dados: {str(e)}")
 
 @app.put("/api/folha/cargos/{id}")
@@ -557,13 +558,13 @@ def folha_cargos_atualizar(id: int, c: CargoModel):
         conn = get_folha_db()
         cursor = conn.cursor()
         cursor.execute(
-            "UPDATE cargos SET nome = ?, locacao = ?, percentual_padrao = ? WHERE id = ?",
+            "UPDATE folha.cargos SET nome = %s, locacao = %s, percentual_padrao = %s WHERE id = %s",
             (c.nome, c.locacao, c.percentual_padrao, id)
         )
         conn.commit()
         conn.close()
         return {"success": True}
-    except sqlite3.Error as e:
+    except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro de Banco de Dados: {str(e)}")
 
 @app.delete("/api/folha/cargos/{id}")
@@ -571,11 +572,11 @@ def folha_cargos_deletar(id: int):
     try:
         conn = get_folha_db()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM cargos WHERE id = ?", (id,))
+        cursor.execute("DELETE FROM folha.cargos WHERE id = %s", (id,))
         conn.commit()
         conn.close()
         return {"success": True}
-    except sqlite3.Error as e:
+    except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro de Banco de Dados: {str(e)}")
 
 # Configurações & Tabelas Fiscais
@@ -585,18 +586,18 @@ def folha_config_obter():
         conn = get_folha_db()
         cursor = conn.cursor()
         
-        cursor.execute("SELECT * FROM config_geral")
+        cursor.execute("SELECT * FROM folha.config_geral")
         geral = {row['chave']: row['valor'] for row in cursor.fetchall()}
         
-        cursor.execute("SELECT * FROM config_inss ORDER BY limite ASC")
+        cursor.execute("SELECT * FROM folha.config_inss ORDER BY limite ASC")
         inss = [dict(row) for row in cursor.fetchall()]
         
-        cursor.execute("SELECT * FROM config_irrf ORDER BY limite ASC")
+        cursor.execute("SELECT * FROM folha.config_irrf ORDER BY limite ASC")
         irrf = [dict(row) for row in cursor.fetchall()]
         
         conn.close()
         return {"geral": geral, "inss": inss, "irrf": irrf}
-    except sqlite3.Error as e:
+    except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro de Banco de Dados: {str(e)}")
 
 @app.post("/api/folha/config/geral")
@@ -605,13 +606,13 @@ def folha_config_geral_salvar(c: ConfigGeralModel):
         conn = get_folha_db()
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO config_geral (chave, valor) VALUES (?, ?) ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor",
+            "INSERT INTO folha.config_geral (chave, valor) VALUES (%s, %s) ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor",
             (c.chave, c.valor)
         )
         conn.commit()
         conn.close()
         return {"success": True}
-    except sqlite3.Error as e:
+    except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro de Banco de Dados: {str(e)}")
 
 @app.put("/api/folha/config/inss/{id}")
@@ -620,13 +621,13 @@ def folha_config_inss_atualizar(id: int, c: ConfigInssModel):
         conn = get_folha_db()
         cursor = conn.cursor()
         cursor.execute(
-            "UPDATE config_inss SET limite = ?, aliquota = ?, deducao = ? WHERE id = ?",
+            "UPDATE folha.config_inss SET limite = %s, aliquota = %s, deducao = %s WHERE id = %s",
             (c.limite, c.aliquota, c.deducao, id)
         )
         conn.commit()
         conn.close()
         return {"success": True}
-    except sqlite3.Error as e:
+    except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro de Banco de Dados: {str(e)}")
 
 @app.put("/api/folha/config/irrf/{id}")
@@ -635,13 +636,13 @@ def folha_config_irrf_atualizar(id: int, c: ConfigIrrfModel):
         conn = get_folha_db()
         cursor = conn.cursor()
         cursor.execute(
-            "UPDATE config_irrf SET limite = ?, aliquota = ?, deducao = ? WHERE id = ?",
+            "UPDATE folha.config_irrf SET limite = %s, aliquota = %s, deducao = %s WHERE id = %s",
             (c.limite, c.aliquota, c.deducao, id)
         )
         conn.commit()
         conn.close()
         return {"success": True}
-    except sqlite3.Error as e:
+    except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro de Banco de Dados: {str(e)}")
 
 @app.post("/api/folha/config/reset")
@@ -650,8 +651,8 @@ def folha_config_reset():
         conn = get_folha_db()
         cursor = conn.cursor()
         
-        cursor.execute("DELETE FROM config_inss")
-        cursor.execute("DELETE FROM config_irrf")
+        cursor.execute("TRUNCATE TABLE folha.config_inss RESTART IDENTITY CASCADE")
+        cursor.execute("TRUNCATE TABLE folha.config_irrf RESTART IDENTITY CASCADE")
         
         inss_defaults = [
             (1621.00, 7.5, 0.0),
@@ -659,7 +660,7 @@ def folha_config_reset():
             (4354.27, 12.0, 111.40),
             (8475.55, 14.0, 198.49)
         ]
-        cursor.executemany("INSERT INTO config_inss (limite, aliquota, deducao) VALUES (?, ?, ?)", inss_defaults)
+        cursor.executemany("INSERT INTO folha.config_inss (limite, aliquota, deducao) VALUES (%s, %s, %s)", inss_defaults)
         
         irrf_defaults = [
             (2428.80, 0.0, 0.0),
@@ -668,12 +669,12 @@ def folha_config_reset():
             (4664.68, 22.5, 675.49),
             (999999999.00, 27.5, 908.73)
         ]
-        cursor.executemany("INSERT INTO config_irrf (limite, aliquota, deducao) VALUES (?, ?, ?)", irrf_defaults)
+        cursor.executemany("INSERT INTO folha.config_irrf (limite, aliquota, deducao) VALUES (%s, %s, %s)", irrf_defaults)
         
         conn.commit()
         conn.close()
         return {"success": True}
-    except sqlite3.Error as e:
+    except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro de Banco de Dados: {str(e)}")
 
 # Fechamentos
@@ -682,11 +683,11 @@ def folha_historico_listar():
     try:
         conn = get_folha_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM folhas_salvas ORDER BY mes_ano DESC")
+        cursor.execute("SELECT * FROM folha.folhas_salvas ORDER BY mes_ano DESC")
         folhas = [dict(row) for row in cursor.fetchall()]
         conn.close()
         return {"folhas": folhas}
-    except sqlite3.Error as e:
+    except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro de Banco de Dados: {str(e)}")
 
 @app.get("/api/folha/folha-detalhes/{id}")
@@ -694,33 +695,31 @@ def folha_detalhes_listar(id: int):
     try:
         conn = get_folha_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM folha_historico_detalhe WHERE folha_salva_id = ? ORDER BY nome ASC", (id,))
+        cursor.execute("SELECT * FROM folha.folha_historico_detalhe WHERE folha_salva_id = %s ORDER BY nome ASC", (id,))
         detalhes = [dict(row) for row in cursor.fetchall()]
         conn.close()
         return {"detalhes": detalhes}
-    except sqlite3.Error as e:
+    except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro de Banco de Dados: {str(e)}")
 
 @app.post("/api/folha/fechar")
 def folha_historico_fechar(req: FecharFolhaRequest):
+    conn = get_folha_db()
     try:
-        conn = get_folha_db()
         cursor = conn.cursor()
         
-        cursor.execute("BEGIN TRANSACTION")
-        
-        cursor.execute("SELECT id FROM folhas_salvas WHERE mes_ano = ?", (req.mes_ano,))
+        cursor.execute("SELECT id FROM folha.folhas_salvas WHERE mes_ano = %s", (req.mes_ano,))
         antigo = cursor.fetchone()
         if antigo:
             antigo_id = antigo['id']
-            cursor.execute("DELETE FROM folha_historico_detalhe WHERE folha_salva_id = ?", (antigo_id,))
-            cursor.execute("DELETE FROM folhas_salvas WHERE id = ?", (antigo_id,))
+            cursor.execute("DELETE FROM folha.folha_historico_detalhe WHERE folha_salva_id = %s", (antigo_id,))
+            cursor.execute("DELETE FROM folha.folhas_salvas WHERE id = %s", (antigo_id,))
             
         cursor.execute(
-            "INSERT INTO folhas_salvas (mes_ano, data_fechamento, criado_por) VALUES (?, ?, ?)",
+            "INSERT INTO folha.folhas_salvas (mes_ano, data_fechamento, criado_por) VALUES (%s, %s, %s) RETURNING id",
             (req.mes_ano, datetime.now().isoformat()[:19].replace('T', ' '), req.criado_por)
         )
-        folha_id = cursor.lastrowid
+        folha_id = cursor.fetchone()['id']
         
         detalhes_tuplas = [
             (
@@ -746,36 +745,37 @@ def folha_historico_fechar(req: FecharFolhaRequest):
         ]
         
         cursor.executemany(
-            "INSERT INTO folha_historico_detalhe (folha_salva_id, funcionario_id, nome, cpf, cargo_nome, locacao, vinculo, percentual, valor_sipes, pensao, outros, acrescimos, bruto, inss, irrf, liquido, dias_trabalhados, previdencia_rpps) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO folha.folha_historico_detalhe (folha_salva_id, funcionario_id, nome, cpf, cargo_nome, locacao, vinculo, percentual, valor_sipes, pensao, outros, acrescimos, bruto, inss, irrf, liquido, dias_trabalhados, previdencia_rpps) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             detalhes_tuplas
         )
         
-        cursor.execute("COMMIT")
+        conn.commit()
         conn.close()
         return {"id": folha_id, "success": True}
-    except sqlite3.Error as e:
+    except Exception as e:
         try:
-            cursor.execute("ROLLBACK")
+            conn.rollback()
         except:
             pass
+        conn.close()
         raise HTTPException(status_code=500, detail=f"Erro de Banco de Dados: {str(e)}")
 
 @app.delete("/api/folha/folhas/{id}")
 def folha_historico_deletar(id: int):
+    conn = get_folha_db()
     try:
-        conn = get_folha_db()
         cursor = conn.cursor()
-        cursor.execute("BEGIN TRANSACTION")
-        cursor.execute("DELETE FROM folha_historico_detalhe WHERE folha_salva_id = ?", (id,))
-        cursor.execute("DELETE FROM folhas_salvas WHERE id = ?", (id,))
-        cursor.execute("COMMIT")
+        cursor.execute("DELETE FROM folha.folha_historico_detalhe WHERE folha_salva_id = %s", (id,))
+        cursor.execute("DELETE FROM folha.folhas_salvas WHERE id = %s", (id,))
+        conn.commit()
         conn.close()
         return {"success": True}
-    except sqlite3.Error as e:
+    except Exception as e:
         try:
-            cursor.execute("ROLLBACK")
+            conn.rollback()
         except:
             pass
+        conn.close()
         raise HTTPException(status_code=500, detail=f"Erro de Banco de Dados: {str(e)}")
 
 # Auditoria (Logs)
@@ -784,11 +784,11 @@ def folha_logs_listar():
     try:
         conn = get_folha_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM auditoria ORDER BY id DESC LIMIT 1000")
+        cursor.execute("SELECT * FROM folha.auditoria ORDER BY id DESC LIMIT 1000")
         logs = [dict(row) for row in cursor.fetchall()]
         conn.close()
         return {"logs": logs}
-    except sqlite3.Error as e:
+    except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro de Banco de Dados: {str(e)}")
 
 @app.post("/api/folha/logs")
@@ -797,13 +797,13 @@ def folha_logs_criar(req: LogRequest):
         conn = get_folha_db()
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO auditoria (usuario, acao, data_hora, detalhes) VALUES (?, ?, ?, ?)",
+            "INSERT INTO folha.auditoria (usuario, acao, data_hora, detalhes) VALUES (%s, %s, %s, %s)",
             (req.usuario, req.acao, datetime.now().isoformat()[:19].replace('T', ' '), req.detalhes)
         )
         conn.commit()
         conn.close()
         return {"success": True}
-    except sqlite3.Error as e:
+    except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro de Banco de Dados: {str(e)}")
 
 @app.delete("/api/folha/logs")
@@ -811,15 +811,14 @@ def folha_logs_limpar():
     try:
         conn = get_folha_db()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM auditoria")
+        cursor.execute("TRUNCATE TABLE folha.auditoria RESTART IDENTITY CASCADE")
         conn.commit()
         conn.close()
         return {"success": True}
-    except sqlite3.Error as e:
+    except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro de Banco de Dados: {str(e)}")
 
 
 if __name__ == "__main__":
     import uvicorn
-    # AVISO PARA TI: O host 0.0.0.0 permite que o servidor seja acessado por outras máquinas na rede local
     uvicorn.run(app, host="0.0.0.0", port=8000)
