@@ -3,3 +3,4 @@ uvicorn
 selenium
 webdriver-manager
 requests
+psycopg2-binary
