@@ -2,7 +2,9 @@ version: '3.8'
 
 services:
   backend-itps:
-    build: .
+    build:
+      context: .
+      network: host
     container_name: backend-itps
     ports:
       - "8000:8000"
