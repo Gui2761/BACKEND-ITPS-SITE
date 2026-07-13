@@ -4,3 +4,5 @@ selenium
 webdriver-manager
 requests
 psycopg2-binary
+python-multipart
+openpyxl

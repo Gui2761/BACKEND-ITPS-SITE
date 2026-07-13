@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 # Desativa os avisos vermelhos de SSL no terminal gerados pelo Proxy
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-from fastapi import FastAPI, HTTPException, status, Header
+from fastapi import FastAPI, HTTPException, status, Header, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -1621,6 +1621,108 @@ def pca_logs_limpar(x_user_role: Optional[str] = Header(None)):
         return {"success": True, "message": "Logs limpos com sucesso!"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao limpar logs: {str(e)}")
+
+@app.post("/api/pca/importar")
+def importar_planilha(
+    ano: int = Form(...),
+    laboratorio_destino: str = Form(...),
+    file: UploadFile = File(...),
+    x_user_role: Optional[str] = Header(None),
+    x_username: Optional[str] = Header(None)
+):
+    if x_user_role != "admin":
+        is_released = False
+        if x_username:
+            is_released = check_user_individual_release(x_username)
+        if not is_released:
+            check_global_lock()
+        if x_username:
+            check_user_lock(x_username)
+            conn = get_pca_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM contratos.users WHERE username = %s", (x_username,))
+            user_row = cursor.fetchone()
+            conn.close()
+            if user_row and user_row['name'] != laboratorio_destino:
+                raise HTTPException(status_code=403, detail="Você só pode importar itens para o seu próprio setor.")
+                
+    try:
+        contents = file.file.read()
+        import io
+        import openpyxl
+        wb = openpyxl.load_workbook(io.BytesIO(contents), data_only=True)
+        sheet = wb.active
+        
+        headers = {}
+        for idx, cell in enumerate(sheet[1]):
+            if cell.value:
+                headers[str(cell.value).strip().lower()] = idx
+                
+        col_map = {
+            'tipo': -1, 'codigo': -1, 'item': -1, 'unidade': -1, 'quantidade': -1, 'valor_unitario': -1, 'categoria': -1
+        }
+        for k in headers:
+            if 'tipo' in k: col_map['tipo'] = headers[k]
+            if 'cód' in k or 'cod' in k: col_map['codigo'] = headers[k]
+            if 'item' in k or 'descri' in k: col_map['item'] = headers[k]
+            if 'unidade' in k or 'und' in k: col_map['unidade'] = headers[k]
+            if 'quant' in k or 'qtd' in k: col_map['quantidade'] = headers[k]
+            if 'valor' in k or 'unit' in k: col_map['valor_unitario'] = headers[k]
+            if 'categ' in k: col_map['categoria'] = headers[k]
+            
+        if col_map['item'] == -1:
+            raise HTTPException(status_code=400, detail="Coluna 'Item' ou 'Descrição' não encontrada na planilha. Estruture as colunas corretamente.")
+            
+        conn = get_pca_db()
+        cursor = conn.cursor()
+        inserted = 0
+        skipped = 0
+        
+        for row in sheet.iter_rows(min_row=2, values_only=True):
+            item_nome = str(row[col_map['item']] or '').strip()
+            if not item_nome or item_nome == 'None': continue
+            codigo = str(row[col_map['codigo']] or '').strip() if col_map['codigo'] != -1 else ""
+            if codigo == 'None': codigo = ""
+            tipo = str(row[col_map['tipo']] or '').strip() if col_map['tipo'] != -1 else "Material de Consumo"
+            unidade = str(row[col_map['unidade']] or '').strip() if col_map['unidade'] != -1 else "UN"
+            
+            try: quantidade = float(row[col_map['quantidade']]) if col_map['quantidade'] != -1 and row[col_map['quantidade']] is not None else 0.0
+            except: quantidade = 0.0
+            
+            try: valor_unitario = float(row[col_map['valor_unitario']]) if col_map['valor_unitario'] != -1 and row[col_map['valor_unitario']] is not None else 0.0
+            except: valor_unitario = 0.0
+            
+            categoria = str(row[col_map['categoria']] or '').strip() if col_map['categoria'] != -1 else "Laboratórios"
+            
+            if codigo:
+                cursor.execute("SELECT id FROM pca.itens WHERE ano = %s AND laboratorio = %s AND (item = %s OR codigo = %s)", (ano, laboratorio_destino, item_nome, codigo))
+            else:
+                cursor.execute("SELECT id FROM pca.itens WHERE ano = %s AND laboratorio = %s AND item = %s", (ano, laboratorio_destino, item_nome))
+                
+            if cursor.fetchone():
+                skipped += 1
+                continue
+                
+            valor_total = quantidade * valor_unitario
+            cursor.execute(
+                """
+                INSERT INTO pca.itens 
+                (origem_pasta, origem_arquivo, laboratorio, setor, categoria_item, tipo, codigo, item, unidade, quantidade, valor_unitario, valor_total, data_sincronizacao, ano)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                ("Importação", "Planilha", laboratorio_destino, laboratorio_destino, categoria, tipo, codigo, item_nome, unidade, quantidade, valor_unitario, valor_total, datetime.now(), ano)
+            )
+            inserted += 1
+            
+        conn.commit()
+        conn.close()
+        
+        registrar_log_pca(x_username or "desconhecido", "Importou planilha", f"Setor: {laboratorio_destino}. Inseridos: {inserted}, Ignorados: {skipped}")
+        return {"success": True, "message": f"Importação concluída! {inserted} itens inseridos. {skipped} itens ignorados por duplicidade.", "inserted": inserted, "skipped": skipped}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao processar planilha: {str(e)}")
 
 import json
 import uuid
