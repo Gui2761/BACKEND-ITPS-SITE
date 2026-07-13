@@ -879,6 +879,19 @@ def check_user_individual_release(username: str) -> bool:
     finally:
         conn.close()
 
+def registrar_log_pca(usuario: str, acao: str, detalhes: str = ""):
+    try:
+        conn = get_pca_db()
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO pca.logs (usuario, acao, detalhes, data_hora) VALUES (%s, %s, %s, %s)",
+            (usuario, acao, detalhes, datetime.now().isoformat()[:19].replace('T', ' '))
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Erro ao registrar log PCA: {e}")
+
 def init_pca_db_tables():
     conn = get_pca_db()
     cursor = conn.cursor()
@@ -937,6 +950,15 @@ def init_pca_db_tables():
                 );
             """)
             cursor.execute("INSERT INTO pca.configuracoes (id, liberacao_fim) VALUES (1, NULL) ON CONFLICT (id) DO NOTHING;")
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS pca.logs (
+                    id SERIAL PRIMARY KEY,
+                    usuario VARCHAR(255) NOT NULL,
+                    acao VARCHAR(100) NOT NULL,
+                    detalhes TEXT,
+                    data_hora TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
             cursor.execute("SELECT username FROM contratos.users")
             existing_usernames = {row['username'] for row in cursor.fetchall()}
             
@@ -1146,6 +1168,7 @@ def criar_item(input_data: ItemPCAInput, x_user_role: Optional[str] = Header(Non
         new_id = cursor.fetchone()['id']
         conn.commit()
         conn.close()
+        registrar_log_pca(x_username or "desconhecido", "Criou item", f"Item #{new_id}: {input_data.item}")
         return {"id": new_id, "success": True, "message": "Item criado com sucesso!"}
     except Exception as e:
         conn.rollback()
@@ -1197,7 +1220,8 @@ def atualizar_item(id: int, input_data: ItemPCAInput, x_user_role: Optional[str]
         
         if affected == 0:
             raise HTTPException(status_code=404, detail="Item não encontrado.")
-            
+        
+        registrar_log_pca(x_username or "desconhecido", "Editou item", f"Item #{id}: {input_data.item}")
         return {"success": True, "message": "Item atualizado com sucesso!"}
     except Exception as e:
         conn.rollback()
@@ -1225,7 +1249,8 @@ def deletar_item(id: int, x_user_role: Optional[str] = Header(None), x_username:
         
         if affected == 0:
             raise HTTPException(status_code=404, detail="Item não encontrado.")
-            
+        
+        registrar_log_pca(x_username or "desconhecido", "Excluiu item", f"Item #{id}")
         return {"success": True, "message": "Item excluído com sucesso!"}
     except Exception as e:
         conn.rollback()
@@ -1237,10 +1262,11 @@ def pca_login(req: PCALoginRequest):
     try:
         conn = get_pca_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT id, username, name, role, edit_locked FROM contratos.users WHERE username = %s AND password = %s", (req.username, req.password))
+        cursor.execute("SELECT id, username, name, role, edit_locked, individual_release FROM contratos.users WHERE username = %s AND password = %s", (req.username, req.password))
         user = cursor.fetchone()
         conn.close()
         if user:
+            registrar_log_pca(req.username, "Login", "Acesso ao sistema")
             return dict(user)
         raise HTTPException(status_code=401, detail="Usuário ou senha incorretos")
     except Exception as e:
@@ -1274,6 +1300,7 @@ def create_user(u: PCAUserCreate):
             
         conn.commit()
         conn.close()
+        registrar_log_pca("admin", "Criou usuário", f"Usuário: {u.username} (ID #{new_id}, Papel: {u.role})")
         return {"id": new_id, "success": True, "message": "Usuário criado com sucesso!"}
     except Exception as e:
         conn.close()
@@ -1290,6 +1317,7 @@ def delete_user(id: int):
         conn.close()
         if affected == 0:
             raise HTTPException(status_code=404, detail="Usuário não encontrado")
+        registrar_log_pca("admin", "Excluiu usuário", f"Usuário ID #{id}")
         return {"success": True, "message": "Usuário excluído com sucesso!"}
     except Exception as e:
         conn.close()
@@ -1323,6 +1351,13 @@ def update_user(id: int, u: PCAUserUpdate):
         conn.close()
         if affected == 0:
             raise HTTPException(status_code=404, detail="Usuário não encontrado")
+        detalhes_log = f"Usuário: {u.username} (Papel: {u.role}"
+        if u.edit_locked:
+            detalhes_log += ", Bloqueado"
+        if u.individual_release:
+            detalhes_log += ", Liberação Individual"
+        detalhes_log += ")"
+        registrar_log_pca("admin", "Editou usuário", detalhes_log)
         return {"success": True, "message": "Usuário atualizado com sucesso!"}
     except Exception as e:
         conn.close()
@@ -1339,6 +1374,7 @@ def lock_user_planning(id: int):
         conn.close()
         if affected == 0:
             raise HTTPException(status_code=404, detail="Usuário não encontrado")
+        registrar_log_pca(f"user_id_{id}", "Finalizou planejamento", f"Usuário ID #{id} finalizou seu planejamento")
         return {"success": True, "message": "Planejamento finalizado com sucesso!"}
     except Exception as e:
         conn.close()
@@ -1504,6 +1540,7 @@ def copiar_ano(req: PCACopiarAnoRequest):
         conn.commit()
         conn.close()
         
+        registrar_log_pca("admin", "Copiou ano", f"{copied_count} itens copiados de {req.de_ano} para {req.para_ano}")
         return {
             "success": True,
             "message": f"Sucesso! {copied_count} itens copiados de {req.de_ano} para {req.para_ano}."
@@ -1548,12 +1585,43 @@ def update_global_config(cfg: PCAConfigInput):
         
         cursor.execute("UPDATE pca.configuracoes SET liberacao_fim = %s WHERE id = 1", (val,))
         conn.commit()
+        registrar_log_pca("admin", "Alterou configuração", f"Prazo de liberação: {cfg.liberacao_fim or 'Removido'}")
         return {"success": True, "message": "Configuração atualizada com sucesso!"}
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=500, detail=f"Erro ao atualizar configuração: {str(e)}")
     finally:
         conn.close()
+# --- LOGS DE AUDITORIA DO PCA ---
+
+@app.get("/api/pca/logs")
+def pca_logs_listar(x_user_role: Optional[str] = Header(None)):
+    if x_user_role != "admin":
+        raise HTTPException(status_code=403, detail="Acesso negado. Apenas administradores podem ver os logs.")
+    try:
+        conn = get_pca_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM pca.logs ORDER BY id DESC LIMIT 500")
+        logs = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return {"logs": logs}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao listar logs: {str(e)}")
+
+@app.delete("/api/pca/logs")
+def pca_logs_limpar(x_user_role: Optional[str] = Header(None)):
+    if x_user_role != "admin":
+        raise HTTPException(status_code=403, detail="Acesso negado. Apenas administradores podem limpar os logs.")
+    try:
+        conn = get_pca_db()
+        cursor = conn.cursor()
+        cursor.execute("TRUNCATE TABLE pca.logs RESTART IDENTITY CASCADE")
+        conn.commit()
+        conn.close()
+        return {"success": True, "message": "Logs limpos com sucesso!"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao limpar logs: {str(e)}")
+
 import json
 import uuid
 
