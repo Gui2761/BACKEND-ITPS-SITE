@@ -927,7 +927,7 @@ def init_pca_db_tables():
         cursor.execute("SELECT COUNT(*) as count FROM pca.laboratorios")
         if cursor.fetchone()['count'] == 0:
             labs = [
-                'Química de Águas', 'Inorgânica', 'Microbiologia', 'Solos', 
+                'Química de Água', 'Inorgânica', 'Microbiologia', 'Solos', 
                 'Bromatologia', 'Orgânica', 'Qualidade', 'Geconf', 'GEAAD / Insumos Gerais'
             ]
             for lab in labs:
@@ -969,7 +969,7 @@ def init_pca_db_tables():
             existing_usernames = {row['username'] for row in cursor.fetchall()}
             
             setores_users = [
-                {'username': 'quimica_aguas', 'name': 'Química de Águas', 'role': 'editor'},
+                {'username': 'agua', 'name': 'Química de Água', 'role': 'editor'},
                 {'username': 'inorganica', 'name': 'Inorgânica', 'role': 'editor'},
                 {'username': 'microbiologia', 'name': 'Microbiologia', 'role': 'editor'},
                 {'username': 'solos', 'name': 'Solos', 'role': 'editor'},
