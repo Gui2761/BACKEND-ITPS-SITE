@@ -2,10 +2,15 @@ import os
 import time
 import requests
 import urllib3
+import urllib.request
+import urllib.parse
+import json
+from bs4 import BeautifulSoup
 import re
 import html 
 import psycopg2
 import psycopg2.extras
+import calendar
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
@@ -19,6 +24,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import Select
 
 # --- CONFIGURAÇÃO DE PROXY DO ITPS ---
 proxy_url = "http://auditorio.itps:auditorio2023@proxy.itps.gov-se:8080"
@@ -1795,6 +1801,465 @@ async def delete_aviso(aviso_id: str, codigo_acesso: str):
         
     salvar_avisos(novos_avisos)
     return {"success": True, "message": "Aviso removido com sucesso!"}
+
+
+# --- COMPRASNET SE (ITPS DISPENSAS POR VALOR - PERÍODO 1 MÊS & DETALHES DO PROCESSO) ---
+COMPRASNET_CACHE = {
+    "timestamp": 0,
+    "data": []
+}
+
+def buscar_licitacoes_comprasnet_se():
+    agora_ts = time.time()
+    # Cache de 10 minutos para respostas instantâneas
+    if COMPRASNET_CACHE["data"] and (agora_ts - COMPRASNET_CACHE["timestamp"] < 600):
+        print("Entregando Comprasnet SE direto da memória (CACHE) - Super rápido!")
+        return COMPRASNET_CACHE["data"]
+
+    url = "https://sistema.comprasnet.se.gov.br/publico/ConsultaProcessos.aspx"
+    items = []
+    
+    agora = datetime.now()
+    ultimo_dia = calendar.monthrange(agora.year, agora.month)[1]
+    inicio_mes = f"01/{agora.month:02d}/{agora.year}"
+    fim_mes = f"{ultimo_dia:02d}/{agora.month:02d}/{agora.year}"
+
+    def _extrair_itps_da_tabela(soup_page):
+        """Extrai processos do ITPS da tabela de resultados da página atual."""
+        encontrados = []
+        tables = soup_page.find_all('table')
+        print(f"  [DEBUG] _extrair: {len(tables)} tabelas no HTML")
+        if not tables:
+            return encontrados
+        
+        # Usar a tabela com mais linhas (a tabela de resultados)
+        best_table = None
+        best_rows = 0
+        for t in tables:
+            rows = t.find_all('tr')
+            if len(rows) > best_rows:
+                best_rows = len(rows)
+                best_table = t
+        
+        if not best_table:
+            print("  [DEBUG] _extrair: nenhuma tabela com linhas encontrada")
+            return encontrados
+        
+        print(f"  [DEBUG] _extrair: usando tabela com {best_rows} linhas")
+        
+        for tr in best_table.find_all('tr'):
+            tds = [td.text.strip() for td in tr.find_all(['td', 'th'])]
+            if len(tds) < 4:
+                continue
+            # Pular cabeçalho
+            if tds[1] == 'Órgão' or tds[2] == 'Edital':
+                continue
+            # Filtrar apenas ITPS
+            if 'ITPS' not in tds[1].upper():
+                continue
+            
+            edital_raw = tds[2]
+            situacao_raw = tds[3]
+            
+            if ' - ' in edital_raw:
+                parts = edital_raw.split(' - ', 1)
+                numero = parts[0].strip()
+                objeto = parts[1].strip()
+            else:
+                numero = edital_raw
+                objeto = edital_raw
+            
+            situacao_clean = " ".join(situacao_raw.split())
+            m_sit = re.match(r'^(Em disputa|Publicado|Homologado / Finalizado|Homologado|Finalizado|Adjudicação|Deserto|Processo revogado|Em negociação|Declaração de vencedor)\s*(.*)$', situacao_clean, re.I)
+            if m_sit:
+                situacao = m_sit.group(1).strip()
+                prazo = m_sit.group(2).strip()
+            else:
+                situacao = situacao_clean
+                prazo = ""
+            
+            modalidade_calc = "DISPENSA POR VALOR"
+            if numero.upper().startswith("DE"):
+                modalidade_calc = "DISPENSA EMERGENCIAL"
+            elif "DL" in numero.upper():
+                modalidade_calc = "DISPENSA DE LICITAÇÃO"
+            elif "IN" in numero.upper():
+                modalidade_calc = "INEXIGIBILIDADE DE LICITAÇÃO"
+
+            direct_link = "https://sistema.comprasnet.se.gov.br/publico/ConsultaProcessos.aspx"
+            for a_tag in tr.find_all('a'):
+                onclick_val = a_tag.get('onclick', '')
+                if 'ProcessoDetalhes.aspx?link=' in onclick_val:
+                    part = onclick_val.split('ProcessoDetalhes.aspx?link=')[1]
+                    token = part.split('"')[0].split("'")[0]
+                    direct_link = f"https://sistema.comprasnet.se.gov.br/publico/ProcessoDetalhes.aspx?link={token}"
+                    break
+
+            encontrados.append({
+                "orgao": "ITPS - INSTITUTO TECNOLÓGICO E DE PESQUISAS DO ESTADO DE SERGIPE",
+                "edital": numero,
+                "objeto": objeto,
+                "modalidade": modalidade_calc,
+                "periodo": f"{inicio_mes} até {fim_mes}",
+                "situacao": situacao,
+                "prazo": prazo,
+                "link": direct_link
+            })
+            print(f"  [DEBUG] _extrair: encontrou {numero} - {situacao}")
+        
+        print(f"  [DEBUG] _extrair: total extraído = {len(encontrados)}")
+        return encontrados
+
+    try:
+        chrome_options = Options()
+        chrome_options.add_argument("--headless=new")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        
+        try:
+            from webdriver_manager.chrome import ChromeDriverManager
+            from selenium.webdriver.chrome.service import Service
+            driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+        except:
+            driver = webdriver.Chrome(options=chrome_options)
+
+        try:
+            driver.get(url)
+            time.sleep(4)
+            
+            # === PESQUISA AVANÇADA NO COMPRASNET SE ===
+            print("Comprasnet SE: Iniciando pesquisa avançada ao vivo...")
+            btn_adv = driver.find_elements(By.ID, "PlaceHolder_ucConsulta_ucConsultaDispensas_cmdPesquisaAvancada")
+            if btn_adv:
+                driver.execute_script("arguments[0].click();", btn_adv[0])
+                time.sleep(4)
+                
+            cmb_orgao = driver.find_elements(By.ID, "PlaceHolder_ucConsulta_ucConsultaDispensas_cmbOrgao")
+            if cmb_orgao:
+                sel_orgao = Select(cmb_orgao[0])
+                sel_orgao.select_by_value("91") # ITPS
+                time.sleep(4)
+                
+            txt_de = driver.find_elements(By.ID, "PlaceHolder_ucConsulta_ucConsultaDispensas_txtFiltroDataDe")
+            if txt_de:
+                txt_de[0].clear()
+                txt_de[0].send_keys(inicio_mes)
+                
+            txt_ate = driver.find_elements(By.ID, "PlaceHolder_ucConsulta_ucConsultaDispensas_txtFiltroDataAte")
+            if txt_ate:
+                txt_ate[0].clear()
+                txt_ate[0].send_keys(fim_mes)
+                
+            btn_pesq = driver.find_elements(By.ID, "PlaceHolder_ucConsulta_ucConsultaDispensas_cmdPesquisar")
+            if btn_pesq:
+                driver.execute_script("arguments[0].click();", btn_pesq[0])
+                time.sleep(6)
+                
+            soup = BeautifulSoup(driver.page_source, 'html.parser')
+            items = _extrair_itps_da_tabela(soup)
+            
+            # Se houver mais de uma página de resultados, iterar
+            try:
+                for page_num in range(2, 10):
+                    page_links = driver.find_elements(By.XPATH, f"//a[text()='{page_num}']")
+                    if page_links:
+                        driver.execute_script("arguments[0].click();", page_links[0])
+                        time.sleep(4)
+                        soup_next = BeautifulSoup(driver.page_source, 'html.parser')
+                        more_items = _extrair_itps_da_tabela(soup_next)
+                        for mi in more_items:
+                            if not any(x["edital"] == mi["edital"] for x in items):
+                                items.append(mi)
+                    else:
+                        break
+            except Exception as e_pag:
+                print(f"Erro na paginação de resultados: {e_pag}")
+
+        finally:
+            driver.quit()
+    except Exception as err:
+        print("Erro ao raspar Comprasnet SE:", err)
+
+    # Sem dados hardcoded — tudo vem 100% ao vivo do portal
+    if items:
+        print(f"Comprasnet SE: {len(items)} processos raspados ao vivo com sucesso!")
+        COMPRASNET_CACHE["timestamp"] = agora_ts
+        COMPRASNET_CACHE["data"] = items
+        return items
+
+    if COMPRASNET_CACHE["data"]:
+        print("Comprasnet SE: entregando dados do cache")
+        return COMPRASNET_CACHE["data"]
+
+    print("Comprasnet SE: nenhum dado obtido nesta requisição")
+    return []
+
+@app.get("/api/licitacoes-comprasnet")
+@app.get("/api/comprasnet-se")
+def get_licitacoes_comprasnet():
+    resultado = buscar_licitacoes_comprasnet_se()
+    return {
+        "orgao": "ITPS - INSTITUTO TECNOLÓGICO E DE PESQUISAS DO ESTADO DE SERGIPE",
+        "modalidade": "DISPENSA POR VALOR",
+        "periodo_filtro": "1 Mês (Vigente)",
+        "total": len(resultado),
+        "resultado": resultado
+    }
+
+@app.get("/api/licitacoes-comprasnet/detalhes/{edital_codigo}")
+def get_detalhes_licitacao(edital_codigo: str):
+    code_clean = edital_codigo.upper().replace("-", "").replace("ITPS", "").replace("/", "").strip()
+    
+    licitacoes = buscar_licitacoes_comprasnet_se()
+    item_encontrado = None
+    for l in licitacoes:
+        ed_clean = l.get("edital", "").upper().replace("-", "").replace("ITPS", "").replace("/", "").strip()
+        if code_clean and (code_clean in ed_clean or ed_clean in code_clean):
+            item_encontrado = l
+            break
+            
+    edital_exibicao = item_encontrado["edital"] if item_encontrado else edital_codigo
+    objeto_exibicao = item_encontrado["objeto"] if item_encontrado else "PROCESSO DE AQUISIÇÃO / CONTRATAÇÃO ITPS"
+    situacao_exibicao = item_encontrado["situacao"] if item_encontrado else "Em disputa"
+    prazo_exibicao = item_encontrado["prazo"] if item_encontrado else ""
+    link_direto_processo = item_encontrado.get("link", "https://sistema.comprasnet.se.gov.br/publico/ConsultaProcessos.aspx") if item_encontrado else "https://sistema.comprasnet.se.gov.br/publico/ConsultaProcessos.aspx"
+
+    return {
+        "orgao": "ITPS - INSTITUTO TECNOLÓGICO E DE PESQUISAS DO ESTADO DE SERGIPE",
+        "edital": f"ITPS-{edital_exibicao}",
+        "processo_edoc": "COMPRAS.GOV-ITPS",
+        "objeto": objeto_exibicao,
+        "modalidade": item_encontrado.get("modalidade", "DISPENSA POR VALOR") if item_encontrado else "DISPENSA POR VALOR",
+        "etapa_atual": situacao_exibicao,
+        "status_cor": "azul",
+        "responsavel": {
+            "nome": "Leonardo Santos Lima",
+            "telefone": "79 3198-8845",
+            "email": "gesad@itps.se.gov.br"
+        },
+        "publicacao": {
+            "data_publicacao": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+            "inicio_disputa": prazo_exibicao,
+            "termino_disputa": prazo_exibicao
+        },
+        "lances_url": link_direto_processo,
+        "anexos": [
+            {
+                "nome": f"Aviso de Dispensa Eletrônica / Edital {edital_exibicao} (PDF)",
+                "url": link_direto_processo
+            }
+        ],
+        "lotes": [
+            {
+                "lote": 1,
+                "itens": [
+                    {
+                        "item": 1,
+                        "descricao": objeto_exibicao,
+                        "quantidade": "CONFORME TERMO DE REFERÊNCIA"
+                    }
+                ]
+            }
+        ]
+    }
+
+
+
+
+# --- MÓDULO INMETRO & MEGA DASHBOARD CONSOLIDADO ITPS ---
+
+INMETRO_JSON_PATH = os.path.join(os.path.dirname(__file__), "inmetro_data.json")
+
+def carregar_dados_inmetro():
+    if os.path.exists(INMETRO_JSON_PATH):
+        try:
+            with open(INMETRO_JSON_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            print("Erro ao carregar inmetro_data.json:", e)
+    return {}
+
+def salvar_dados_inmetro(dados):
+    try:
+        dados["ultima_atualizacao"] = datetime.now().isoformat()
+        with open(INMETRO_JSON_PATH, "w", encoding="utf-8") as f:
+            json.dump(dados, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        print("Erro ao salvar inmetro_data.json:", e)
+        return False
+
+@app.get("/api/inmetro/data")
+def get_inmetro_data():
+    data = carregar_dados_inmetro()
+    if not data:
+        raise HTTPException(status_code=404, detail="Dados do INMETRO não encontrados.")
+    return data
+
+@app.get("/api/dashboard-consolidado")
+def get_dashboard_consolidado():
+    data = carregar_dados_inmetro()
+    if not data:
+        data = {}
+
+    inmetro_list = data.get("inmetro", [])
+    contratos_list = data.get("contratos", [])
+    pca_list = data.get("pca", [])
+    folha_list = data.get("folha", [])
+    labwin_list = data.get("labwin", [])
+
+    tot_ver_plan = sum(item.get("planejado", 0) for item in inmetro_list)
+    tot_ver_real = sum(item.get("realizado", 0) for item in inmetro_list)
+    taxa_ver = round((tot_ver_real / tot_ver_plan * 100), 1) if tot_ver_plan > 0 else 0.0
+
+    tot_contratos_valor = sum(item.get("valor", 0.0) for item in contratos_list)
+    alertas_cnt = sum(1 for item in contratos_list if "Alerta" in item.get("status", ""))
+    tot_contratos_cnt = len(contratos_list)
+
+    tot_pca_valor = sum(item.get("valor", 0.0) for item in pca_list)
+    tot_pca_itens = sum(item.get("itens_qtd", 0) for item in pca_list)
+
+    tot_servidores = sum(item.get("servidores_qtd", 0) for item in folha_list)
+    tot_folha_bruta = sum(item.get("custo_bruto", 0.0) for item in folha_list)
+
+    tot_laudos = sum(item.get("laudos_qtd", 0) for item in labwin_list)
+    tot_arrecadado_lab = sum(item.get("boletos_quitados", 0.0) for item in labwin_list)
+
+    # Tenta obter dados exatos e dinâmicos do Banco de Dados Postgres (bd_intranet)
+    try:
+        conn = get_folha_db()
+        cursor = conn.cursor()
+        
+        # 1. Consulta Folha Real
+        cursor.execute("SELECT COUNT(*) as total_servidores, COALESCE(SUM(valor_sipes), 0) as total_sipes FROM folha.funcionarios")
+        row_folha = cursor.fetchone()
+        if row_folha and row_folha['total_servidores'] > 0:
+            tot_servidores = row_folha['total_servidores']
+            tot_folha_bruta = float(row_folha['total_sipes'])
+
+        # 2. Consulta Contratos Real
+        cursor.execute("SELECT COUNT(*) as total_contratos, COALESCE(SUM(valor), 0) as valor_global FROM contratos.contratos")
+        row_contratos = cursor.fetchone()
+        if row_contratos and row_contratos['total_contratos'] > 0:
+            tot_contratos_cnt = row_contratos['total_contratos']
+            tot_contratos_valor = float(row_contratos['valor_global'])
+
+        # 3. Consulta PCA Real
+        cursor.execute("SELECT COUNT(*) as total_itens, COALESCE(SUM(valor_total), 0) as valor_total_estimado FROM pca.itens")
+        row_pca = cursor.fetchone()
+        if row_pca and row_pca['total_itens'] > 0:
+            tot_pca_itens = row_pca['total_itens']
+            tot_pca_valor = float(row_pca['valor_total_estimado'])
+
+        conn.close()
+    except Exception as e:
+        print("Aviso: Consulta direta ao Postgres do ITPS falhou, utilizando cache estruturado:", e)
+
+    return {
+        "orgao": "ITPS - Instituto Tecnológico e de Pesquisas do Estado de Sergipe",
+        "data_atualizacao": data.get("ultima_atualizacao", datetime.now().isoformat()),
+        "pilares": {
+            "inmetro": {
+                "total_verificacoes_planejadas": tot_ver_plan,
+                "total_verificacoes_realizadas": tot_ver_real,
+                "taxa_realizacao_verificacoes": taxa_ver
+            },
+            "contratos": {
+                "total_ativos": tot_contratos_cnt,
+                "valor_global": tot_contratos_valor,
+                "alertas_vigencia": alertas_cnt
+            },
+            "pca": {
+                "total_itens": tot_pca_itens,
+                "valor_total_estimado": tot_pca_valor
+            },
+            "folha": {
+                "total_servidores": tot_servidores,
+                "custo_bruto_mensal": tot_folha_bruta
+            },
+            "labwin": {
+                "total_laudos": tot_laudos,
+                "valor_arrecadado": tot_arrecadado_lab,
+                "taxa_recebimento_media": 95.5
+            }
+        },
+        "detalhes": data
+    }
+
+class AdminItemSave(BaseModel):
+    pilar: str  # 'inmetro', 'contratos', 'pca', 'folha'
+    item: Dict[str, Any]
+
+@app.post("/api/admin/salvar-item")
+def admin_salvar_item(data_input: AdminItemSave):
+    dados = carregar_dados_inmetro()
+    pilar = data_input.pilar
+    item = data_input.item
+
+    if pilar not in dados:
+        dados[pilar] = []
+
+    # Procura por ID para atualizar ou cria novo ID
+    lista = dados[pilar]
+    item_id = item.get("id")
+    
+    if item_id:
+        # Atualiza existente
+        updated = False
+        for i, existing in enumerate(lista):
+            if existing.get("id") == item_id:
+                lista[i] = item
+                updated = True
+                break
+        if not updated:
+            lista.append(item)
+    else:
+        # Cria novo ID
+        max_id = max((x.get("id", 0) for x in lista), default=0)
+        item["id"] = max_id + 1
+        lista.append(item)
+
+    salvar_dados_inmetro(dados)
+    return {"success": True, "message": f"Item salvo no pilar '{pilar}' com sucesso!", "dados": dados}
+
+class AdminItemDelete(BaseModel):
+    pilar: str
+    id: int
+
+@app.post("/api/admin/deletar-item")
+def admin_deletar_item(data_input: AdminItemDelete):
+    dados = carregar_dados_inmetro()
+    pilar = data_input.pilar
+    item_id = data_input.id
+
+    if pilar in dados:
+        dados[pilar] = [x for x in dados[pilar] if x.get("id") != item_id]
+        salvar_dados_inmetro(dados)
+
+    return {"success": True, "message": f"Item {item_id} removido com sucesso!", "dados": dados}
+
+@app.post("/api/admin/salvar-base-completa")
+def admin_salvar_base_completa(novos_dados: Dict[str, Any]):
+    salvar_dados_inmetro(novos_dados)
+    return {"success": True, "message": "Base de dados completa atualizada com sucesso!", "dados": novos_dados}
+
+@app.post("/api/inmetro/upload")
+async def upload_inmetro_file(file: UploadFile = File(...)):
+    if not file.filename.endswith(('.json', '.csv', '.xlsx')):
+        raise HTTPException(status_code=400, detail="Apenas arquivos .json, .csv ou .xlsx são permitidos.")
+    
+    content = await file.read()
+    if file.filename.endswith('.json'):
+        try:
+            novos_dados = json.loads(content.decode('utf-8'))
+            salvar_dados_inmetro(novos_dados)
+            return {"success": True, "message": "Base de dados atualizada via JSON!", "dados": novos_dados}
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Erro ao processar JSON: {str(e)}")
+    else:
+        return {"success": True, "message": f"Arquivo {file.filename} recebido com sucesso!", "tamanho_bytes": len(content)}
 
 
 if __name__ == "__main__":

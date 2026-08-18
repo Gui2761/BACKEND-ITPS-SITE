@@ -1,0 +1,261 @@
+{
+  "versao": "2.0",
+  "ultima_atualizacao": "2026-07-30T12:04:00",
+  "inmetro": [
+    {
+      "id": 1,
+      "categoria": "Balanças Comerciais (Até 30kg)",
+      "planejado": 4800,
+      "realizado": 4320,
+      "ano": 2025,
+      "status": "Concluído"
+    },
+    {
+      "id": 2,
+      "categoria": "Balanças Industriais",
+      "planejado": 1200,
+      "realizado": 1150,
+      "ano": 2025,
+      "status": "Concluído"
+    },
+    {
+      "id": 3,
+      "categoria": "Bombas de Combustível",
+      "planejado": 4000,
+      "realizado": 3650,
+      "ano": 2025,
+      "status": "Concluído"
+    },
+    {
+      "id": 4,
+      "categoria": "Esfigmomanômetros (Pressão)",
+      "planejado": 2200,
+      "realizado": 1980,
+      "ano": 2025,
+      "status": "Concluído"
+    },
+    {
+      "id": 5,
+      "categoria": "Taxímetros",
+      "planejado": 950,
+      "realizado": 910,
+      "ano": 2025,
+      "status": "Concluído"
+    },
+    {
+      "id": 6,
+      "categoria": "Produtos Pré-Medidos (Alimentos)",
+      "planejado": 3400,
+      "realizado": 3110,
+      "ano": 2025,
+      "status": "97.2% Conformidade"
+    },
+    {
+      "id": 7,
+      "categoria": "Higiene / Limpeza",
+      "planejado": 1800,
+      "realizado": 1750,
+      "ano": 2025,
+      "status": "97.2% Conformidade"
+    },
+    {
+      "id": 8,
+      "categoria": "Balanças Comerciais (Até 30kg)",
+      "planejado": 4800,
+      "realizado": 1250,
+      "ano": 2026,
+      "status": "Em Andamento"
+    }
+  ],
+  "contratos": [
+    {
+      "id": 1,
+      "numero": "Cooperação Institucional",
+      "empresa": "Termos de Cooperação com Órgãos",
+      "objeto": "Cooperação Técnica e Operacional ITPS",
+      "valor": 2538083.0,
+      "vigencia_fim": "2026-12-31",
+      "status": "Ativo"
+    },
+    {
+      "id": 2,
+      "numero": "Empresas Privadas",
+      "empresa": "Fornecedores de Manutenção e Calibração",
+      "objeto": "Prestação de Serviços e Manutenção de Equipamentos",
+      "valor": 753392.49,
+      "vigencia_fim": "2026-11-15",
+      "status": "Ativo"
+    },
+    {
+      "id": 3,
+      "numero": "Órgãos Públicos",
+      "empresa": "Convênios com Prefeituras e Secretarias",
+      "objeto": "Ações Conjuntas de Metrologia e Qualidade",
+      "valor": 111852.68,
+      "vigencia_fim": "2026-09-30",
+      "status": "Alerta 90 dias"
+    },
+    {
+      "id": 4,
+      "numero": "Estágio Supervisão",
+      "empresa": "Programa de Estágio de Nível Superior e Técnico",
+      "objeto": "Bolsas de Estágio Acadêmico ITPS",
+      "valor": 0.0,
+      "vigencia_fim": "2026-12-31",
+      "status": "Ativo"
+    }
+  ],
+  "pca": [
+    {
+      "id": 1,
+      "setor": "GECONF (Contratos & Finanças)",
+      "categoria": "Material de Consumo",
+      "valor": 9525354.35,
+      "itens_qtd": 44,
+      "ano": 2026
+    },
+    {
+      "id": 2,
+      "setor": "Química de Águas",
+      "categoria": "Material de Consumo & Equipamentos",
+      "valor": 4154772.66,
+      "itens_qtd": 92,
+      "ano": 2026
+    },
+    {
+      "id": 3,
+      "setor": "Geral / Administração",
+      "categoria": "Serviços & Manutenção",
+      "valor": 2714965.45,
+      "itens_qtd": 64,
+      "ano": 2026
+    },
+    {
+      "id": 4,
+      "setor": "Bromatologia (Alimentos)",
+      "categoria": "Material de Consumo",
+      "valor": 656616.37,
+      "itens_qtd": 31,
+      "ano": 2026
+    },
+    {
+      "id": 5,
+      "setor": "GEAAD / Insumos Gerais",
+      "categoria": "Material de Consumo",
+      "valor": 262959.7,
+      "itens_qtd": 171,
+      "ano": 2026
+    },
+    {
+      "id": 6,
+      "setor": "Microbiologia",
+      "categoria": "Meios de Cultura & Insumos",
+      "valor": 155850.36,
+      "itens_qtd": 72,
+      "ano": 2026
+    },
+    {
+      "id": 7,
+      "setor": "Qualidade",
+      "categoria": "Calibração & Equipamentos",
+      "valor": 129050.0,
+      "itens_qtd": 10,
+      "ano": 2026
+    }
+  ],
+  "folha": [
+    {
+      "id": 1,
+      "vinculo": "Comissionados",
+      "servidores_qtd": 41,
+      "custo_bruto": 58416.45,
+      "custo_liquido": 48200.0,
+      "ano": 2026
+    },
+    {
+      "id": 2,
+      "vinculo": "Concursados Efetivos",
+      "servidores_qtd": 35,
+      "custo_bruto": 183248.7,
+      "custo_liquido": 151200.0,
+      "ano": 2026
+    },
+    {
+      "id": 3,
+      "vinculo": "Cedidos",
+      "servidores_qtd": 17,
+      "custo_bruto": 93187.02,
+      "custo_liquido": 76800.0,
+      "ano": 2026
+    }
+  ],
+  "labwin": [
+    {
+      "id": 1,
+      "laboratorio": "Laboratório de Águas e Efluentes",
+      "laudos_qtd": 1420,
+      "amostras_qtd": 3850,
+      "valor_laudos": 485000.0,
+      "boletos_quitados": 462000.0,
+      "taxa_recebimento": 95.2,
+      "ano": 2025
+    },
+    {
+      "id": 2,
+      "laboratorio": "Laboratório de Solos e Foliar",
+      "laudos_qtd": 980,
+      "amostras_qtd": 2400,
+      "valor_laudos": 320000.0,
+      "boletos_quitados": 304000.0,
+      "taxa_recebimento": 95.0,
+      "ano": 2025
+    },
+    {
+      "id": 3,
+      "laboratorio": "Laboratório de Alimentos e Microbiologia",
+      "laudos_qtd": 1150,
+      "amostras_qtd": 2900,
+      "valor_laudos": 390000.0,
+      "boletos_quitados": 378000.0,
+      "taxa_recebimento": 96.9,
+      "ano": 2025
+    },
+    {
+      "id": 4,
+      "laboratorio": "Laboratório de Ensaios Físico-Químicos",
+      "laudos_qtd": 840,
+      "amostras_qtd": 1950,
+      "valor_laudos": 260000.0,
+      "boletos_quitados": 248000.0,
+      "taxa_recebimento": 95.3,
+      "ano": 2025
+    },
+    {
+      "id": 5,
+      "laboratorio": "Laboratório de Águas e Efluentes",
+      "laudos_qtd": 420,
+      "amostras_qtd": 1100,
+      "valor_laudos": 145000.0,
+      "boletos_quitados": 138000.0,
+      "taxa_recebimento": 95.1,
+      "ano": 2026
+    },
+    {
+      "id": 6,
+      "laboratorio": "Laboratório de Solos e Foliar",
+      "laudos_qtd": 310,
+      "amostras_qtd": 780,
+      "valor_laudos": 98000.0,
+      "boletos_quitados": 92000.0,
+      "taxa_recebimento": 93.8,
+      "ano": 2026
+    }
+  ],
+  "arrecadacao_boletos": {
+    "total_emitido": 1455000.0,
+    "total_quitado": 1392000.0,
+    "total_pendente": 63000.0,
+    "taxa_global_recebimento": 95.6,
+    "clientes_atendidos": 680
+  }
+}
