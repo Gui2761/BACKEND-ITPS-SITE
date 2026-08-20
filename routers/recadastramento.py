@@ -37,7 +37,7 @@ def gerar_numero_protocolo() -> str:
     finally:
         conn.close()
 
-def salvar_arquivo_upload(cpf: str, tipo_doc: str, upload_file: UploadFile) -> str:
+def salvar_arquivo_upload(cpf: str, tipo_doc: str, upload_file: Optional[UploadFile]) -> str:
     """Salva o arquivo no disco de forma segura e retorna o caminho relativo."""
     if not upload_file or not upload_file.filename:
         return ""
@@ -74,6 +74,13 @@ async def enviar_recadastramento(
     titulo_zona: Optional[str] = Form(""),
     titulo_secao: Optional[str] = Form(""),
     
+    # Escolaridade & CTPS (Checklist GERH)
+    escolaridade: Optional[str] = Form(""),
+    curso_formacao: Optional[str] = Form(""),
+    ctps_numero: Optional[str] = Form(""),
+    ctps_serie: Optional[str] = Form(""),
+    ctps_uf: Optional[str] = Form(""),
+    
     # 2. Endereço & Contato
     cep: Optional[str] = Form(""),
     logradouro: Optional[str] = Form(""),
@@ -105,9 +112,14 @@ async def enviar_recadastramento(
     possui_dependentes: Optional[str] = Form("false"),
     dependentes_json: Optional[str] = Form("[]"),
     
-    # 6. Uploads Obrigatórios
+    # 6. Uploads de Documentos (Checklist Oficial GERH)
+    doc_foto3x4: Optional[UploadFile] = File(None),
     doc_identificacao: UploadFile = File(...),
+    doc_titulo: Optional[UploadFile] = File(None),
     doc_residencia: UploadFile = File(...),
+    doc_ctps: Optional[UploadFile] = File(None),
+    doc_escolaridade: Optional[UploadFile] = File(None),
+    doc_historico_grade: Optional[UploadFile] = File(None),
     doc_bancario: UploadFile = File(...),
     doc_dependentes: Optional[List[UploadFile]] = File(None)
 ):
@@ -120,9 +132,14 @@ async def enviar_recadastramento(
         data_hora_envio = datetime.now()
         ip_cliente = request.client.host if request.client else ""
         
-        # Salvar arquivos enviados
+        # Salvar arquivos enviados (Checklist Oficial GERH)
+        path_foto3x4 = salvar_arquivo_upload(cpf_limpo, "foto3x4", doc_foto3x4)
         path_identificacao = salvar_arquivo_upload(cpf_limpo, "identificacao", doc_identificacao)
+        path_titulo = salvar_arquivo_upload(cpf_limpo, "titulo", doc_titulo)
         path_residencia = salvar_arquivo_upload(cpf_limpo, "residencia", doc_residencia)
+        path_ctps = salvar_arquivo_upload(cpf_limpo, "ctps", doc_ctps)
+        path_escolaridade = salvar_arquivo_upload(cpf_limpo, "escolaridade", doc_escolaridade)
+        path_historico_grade = salvar_arquivo_upload(cpf_limpo, "historico_grade", doc_historico_grade)
         path_bancario = salvar_arquivo_upload(cpf_limpo, "bancario", doc_bancario)
         
         paths_dependentes = []
@@ -142,24 +159,28 @@ async def enviar_recadastramento(
                 protocolo, nome_completo, cpf, rg, rg_orgao, rg_uf, rg_data_expedicao,
                 data_nascimento, sexo, estado_civil, nome_mae, nome_pai,
                 titulo_eleitor, titulo_zona, titulo_secao,
+                escolaridade, curso_formacao, ctps_numero, ctps_serie, ctps_uf,
                 cep, logradouro, numero, complemento, bairro, cidade, uf,
                 whatsapp, email_pessoal, email_institucional,
                 matricula, cargo, setor, vinculo, data_admissao,
                 banco, tipo_conta, agencia, conta, tipo_chave_pix, chave_pix,
                 possui_dependentes, dependentes_json,
-                doc_identificacao_path, doc_residencia_path, doc_bancario_path, doc_dependentes_paths,
-                status, data_envio, ip_envio
+                doc_foto3x4_path, doc_identificacao_path, doc_titulo_path, doc_residencia_path,
+                doc_ctps_path, doc_escolaridade_path, doc_historico_grade_path, doc_bancario_path,
+                doc_dependentes_paths, status, data_envio, ip_envio
             ) VALUES (
                 %s, %s, %s, %s, %s, %s, %s,
                 %s, %s, %s, %s, %s,
                 %s, %s, %s,
+                %s, %s, %s, %s, %s,
                 %s, %s, %s, %s, %s, %s, %s,
                 %s, %s, %s,
                 %s, %s, %s, %s, %s,
                 %s, %s, %s, %s, %s, %s,
                 %s, %s,
                 %s, %s, %s, %s,
-                %s, %s, %s
+                %s, %s, %s, %s,
+                %s, %s, %s, %s
             ) RETURNING id;
         """
         
@@ -167,13 +188,15 @@ async def enviar_recadastramento(
             protocolo, nome_completo.strip(), cpf.strip(), rg.strip(), rg_orgao.strip(), rg_uf.strip(), rg_data_expedicao.strip(),
             data_nascimento.strip(), sexo.strip(), estado_civil.strip(), nome_mae.strip(), nome_pai.strip(),
             titulo_eleitor.strip(), titulo_zona.strip(), titulo_secao.strip(),
+            escolaridade.strip(), curso_formacao.strip(), ctps_numero.strip(), ctps_serie.strip(), ctps_uf.strip(),
             cep.strip(), logradouro.strip(), numero.strip(), complemento.strip(), bairro.strip(), cidade.strip(), uf.strip(),
             whatsapp.strip(), email_pessoal.strip(), email_institucional.strip(),
             matricula.strip(), cargo.strip(), setor.strip(), vinculo.strip(), data_admissao.strip(),
             banco.strip(), tipo_conta.strip(), agencia.strip(), conta.strip(), tipo_chave_pix.strip(), chave_pix.strip(),
             has_dep, dependentes_json,
-            path_identificacao, path_residencia, path_bancario, json.dumps(paths_dependentes),
-            'ENVIADO', data_hora_envio, ip_cliente
+            path_foto3x4, path_identificacao, path_titulo, path_residencia,
+            path_ctps, path_escolaridade, path_historico_grade, path_bancario,
+            json.dumps(paths_dependentes), 'ENVIADO', data_hora_envio, ip_cliente
         ))
         
         new_id = cursor.fetchone()['id']
@@ -189,7 +212,7 @@ async def enviar_recadastramento(
             "cpf": cpf.strip(),
             "cargo": cargo.strip(),
             "setor": setor.strip(),
-            "mensagem": "Recadastramento enviado com sucesso!"
+            "mensagem": "Recadastramento e documentação enviados com sucesso!"
         }
         
     except HTTPException:
