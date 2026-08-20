@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import core.config  # Importa para aplicar as configurações globais de proxy e proxy_url
 
-from routers import portal, contratos, folha, pca, avisos, comprasnet, inmetro
+from routers import portal, contratos, folha, pca, avisos, comprasnet, inmetro, recadastramento
 
 app = FastAPI()
 
@@ -21,6 +21,7 @@ app.include_router(pca.router)
 app.include_router(avisos.router)
 app.include_router(comprasnet.router)
 app.include_router(inmetro.router)
+app.include_router(recadastramento.router)
 
 if __name__ == "__main__":
     import uvicorn
