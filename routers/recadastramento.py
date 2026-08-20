@@ -120,7 +120,7 @@ async def enviar_recadastramento(
     doc_ctps: Optional[UploadFile] = File(None),
     doc_escolaridade: Optional[UploadFile] = File(None),
     doc_historico_grade: Optional[UploadFile] = File(None),
-    doc_bancario: UploadFile = File(...),
+    doc_bancario: Optional[UploadFile] = File(None),
     doc_dependentes: Optional[List[UploadFile]] = File(None)
 ):
     try:
