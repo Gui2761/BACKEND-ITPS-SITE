@@ -22,8 +22,8 @@ COPY requirements.txt /app/
 # Instala as dependências do projeto
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copia o código da aplicação
-COPY main.py /app/
+# Copia todo o código da aplicação
+COPY . /app/
 
 # Expor a porta que a aplicação roda
 EXPOSE 8000
