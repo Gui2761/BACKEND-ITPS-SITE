@@ -1,13 +1,20 @@
 import os
 import re
+import csv
+import io
 import json
 import uuid
 import shutil
 from datetime import datetime
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, status, Request
-from fastapi.responses import FileResponse, JSONResponse
+from pydantic import BaseModel
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, status, Request, Query
+from fastapi.responses import FileResponse, JSONResponse, Response
 from core.database import get_folha_db
+
+class StatusUpdateRequest(BaseModel):
+    status: str
+    observacoes: Optional[str] = ""
 
 router = APIRouter(prefix="/api/recadastramento", tags=["Recadastramento"])
 
@@ -273,5 +280,267 @@ def obter_detalhes_completos(protocolo: str):
             data['data_envio'] = data['data_envio'].strftime("%d/%m/%Y às %H:%M:%S")
             
         return {"success": True, "dados": data}
+    finally:
+        conn.close()
+
+
+# ========================================================
+# ENDPOINTS ADMINISTRATIVOS (PAINEL GERH / RECADASTRAMENTO)
+# ========================================================
+
+@router.get("/admin/listar")
+def admin_listar_recadastramentos(
+    busca: Optional[str] = None,
+    status: Optional[str] = None,
+    escolaridade: Optional[str] = None,
+    data_inicio: Optional[str] = None,
+    data_fim: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 20
+):
+    """Lista todos os recadastramentos com filtros, paginação e estatísticas."""
+    conn = get_folha_db()
+    cursor = conn.cursor()
+    try:
+        conditions = []
+        params = []
+
+        if busca and busca.strip():
+            b = f"%{busca.strip()}%"
+            cpf_num = re.sub(r'\D', '', busca.strip())
+            conditions.append(
+                "(nome_completo ILIKE %s OR protocolo ILIKE %s OR email_pessoal ILIKE %s OR whatsapp ILIKE %s OR regexp_replace(cpf, '[^0-9]', '', 'g') ILIKE %s)"
+            )
+            params.extend([b, b, b, b, f"%{cpf_num}%"])
+
+        if status and status.strip() and status != "TODOS":
+            conditions.append("status = %s")
+            params.append(status.strip())
+
+        if escolaridade and escolaridade.strip() and escolaridade != "TODAS":
+            conditions.append("escolaridade = %s")
+            params.append(escolaridade.strip())
+
+        if data_inicio and data_inicio.strip():
+            conditions.append("data_envio >= %s")
+            params.append(f"{data_inicio.strip()} 00:00:00")
+
+        if data_fim and data_fim.strip():
+            conditions.append("data_envio <= %s")
+            params.append(f"{data_fim.strip()} 23:59:59")
+
+        where_clause = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+
+        # 1. Total filtrado
+        count_query = f"SELECT COUNT(*) as total FROM folha.recadastramentos {where_clause}"
+        cursor.execute(count_query, params)
+        total_filtrado = cursor.fetchone()['total']
+
+        # 2. Registros paginados
+        offset = (page - 1) * page_size
+        data_query = f"""
+            SELECT * FROM folha.recadastramentos
+            {where_clause}
+            ORDER BY id DESC
+            LIMIT %s OFFSET %s
+        """
+        cursor.execute(data_query, params + [page_size, offset])
+        rows = cursor.fetchall()
+
+        itens = []
+        for r in rows:
+            d = dict(r)
+            if isinstance(d.get('data_envio'), datetime):
+                d['data_envio_formatada'] = d['data_envio'].strftime("%d/%m/%Y %H:%M")
+                d['data_envio'] = d['data_envio'].isoformat()
+            
+            # Formatar lista de dependentes
+            try:
+                d['dependentes'] = json.loads(d.get('dependentes_json') or '[]')
+            except Exception:
+                d['dependentes'] = []
+                
+            # Formatar caminhos de dependentes
+            try:
+                d['doc_dependentes_paths'] = json.loads(d.get('doc_dependentes_paths') or '[]')
+            except Exception:
+                d['doc_dependentes_paths'] = []
+
+            itens.append(d)
+
+        # 3. Estatísticas Gerais (Dashboard)
+        cursor.execute("""
+            SELECT
+                COUNT(*) as total_geral,
+                COUNT(*) FILTER (WHERE data_envio >= CURRENT_DATE) as total_hoje,
+                COUNT(*) FILTER (WHERE possui_dependentes = true) as total_com_dependentes,
+                COUNT(*) FILTER (WHERE status = 'ENVIADO') as total_enviados,
+                COUNT(*) FILTER (WHERE status = 'EM ANÁLISE') as total_em_analise,
+                COUNT(*) FILTER (WHERE status = 'APROVADO') as total_aprovados,
+                COUNT(*) FILTER (WHERE status = 'PENDENTE') as total_pendentes
+            FROM folha.recadastramentos
+        """)
+        stats_row = cursor.fetchone()
+        metricas = dict(stats_row) if stats_row else {}
+
+        return {
+            "success": True,
+            "total": total_filtrado,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": (total_filtrado + page_size - 1) // page_size if total_filtrado > 0 else 1,
+            "items": itens,
+            "metricas": metricas
+        }
+    finally:
+        conn.close()
+
+
+@router.get("/admin/detalhes/{id}")
+def admin_obter_detalhes(id: int):
+    """Retorna a ficha completa de um servidor por ID."""
+    conn = get_folha_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT * FROM folha.recadastramentos WHERE id = %s", (id,))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Registro não encontrado.")
+            
+        data = dict(row)
+        if isinstance(data.get('data_envio'), datetime):
+            data['data_envio_formatada'] = data['data_envio'].strftime("%d/%m/%Y às %H:%M:%S")
+            data['data_envio'] = data['data_envio'].isoformat()
+            
+        try:
+            data['dependentes'] = json.loads(data.get('dependentes_json') or '[]')
+        except Exception:
+            data['dependentes'] = []
+            
+        try:
+            data['doc_dependentes_paths'] = json.loads(data.get('doc_dependentes_paths') or '[]')
+        except Exception:
+            data['doc_dependentes_paths'] = []
+
+        return {"success": True, "servidor": data}
+    finally:
+        conn.close()
+
+
+@router.patch("/admin/{id}/status")
+def admin_atualizar_status(id: int, req: StatusUpdateRequest):
+    """Atualiza o status e observações de um recadastramento."""
+    conn = get_folha_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            UPDATE folha.recadastramentos
+            SET status = %s, observacoes = %s
+            WHERE id = %s
+            RETURNING id, protocolo, status, observacoes;
+            """,
+            (req.status.strip(), req.observacoes.strip() if req.observacoes else "", id)
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Registro não encontrado.")
+        conn.commit()
+        return {"success": True, "mensagem": "Status atualizado com sucesso!", "dados": dict(row)}
+    finally:
+        conn.close()
+
+
+@router.delete("/admin/{id}")
+def admin_excluir_registro(id: int):
+    """Exclui um recadastramento do sistema."""
+    conn = get_folha_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM folha.recadastramentos WHERE id = %s RETURNING id, protocolo, nome_completo;", (id,))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Registro não encontrado.")
+        conn.commit()
+        return {"success": True, "mensagem": f"Recadastramento {row['protocolo']} ({row['nome_completo']}) excluído com sucesso."}
+    finally:
+        conn.close()
+
+
+@router.get("/admin/exportar-csv")
+def admin_exportar_csv(
+    busca: Optional[str] = None,
+    status: Optional[str] = None,
+    escolaridade: Optional[str] = None
+):
+    """Exporta todos os dados filtrados em formato CSV (Excel UTF-8)."""
+    conn = get_folha_db()
+    cursor = conn.cursor()
+    try:
+        conditions = []
+        params = []
+
+        if busca and busca.strip():
+            b = f"%{busca.strip()}%"
+            cpf_num = re.sub(r'\D', '', busca.strip())
+            conditions.append(
+                "(nome_completo ILIKE %s OR protocolo ILIKE %s OR email_pessoal ILIKE %s OR whatsapp ILIKE %s OR regexp_replace(cpf, '[^0-9]', '', 'g') ILIKE %s)"
+            )
+            params.extend([b, b, b, b, f"%{cpf_num}%"])
+
+        if status and status.strip() and status != "TODOS":
+            conditions.append("status = %s")
+            params.append(status.strip())
+
+        if escolaridade and escolaridade.strip() and escolaridade != "TODAS":
+            conditions.append("escolaridade = %s")
+            params.append(escolaridade.strip())
+
+        where_clause = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+
+        query = f"""
+            SELECT protocolo, nome_completo, cpf, rg, rg_orgao, rg_uf, data_nascimento,
+                   sexo, estado_civil, nome_mae, nome_pai, titulo_eleitor, escolaridade,
+                   curso_formacao, ctps_numero, ctps_serie, logradouro, numero, complemento,
+                   bairro, cidade, uf, cep, whatsapp, email_pessoal, possui_dependentes,
+                   status, observacoes, data_envio
+            FROM folha.recadastramentos
+            {where_clause}
+            ORDER BY id DESC
+        """
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+
+        output = io.StringIO()
+        writer = csv.writer(output, delimiter=';', quoting=csv.QUOTE_MINIMAL)
+
+        # Header
+        writer.writerow([
+            "Protocolo", "Nome Completo", "CPF", "RG", "Órgão/UF", "Data Nasc.",
+            "Sexo", "Estado Civil", "Nome Mãe", "Nome Pai", "Título Eleitor",
+            "Escolaridade", "Curso/Formação", "CTPS", "Série", "Endereço",
+            "Número", "Complemento", "Bairro", "Cidade", "UF", "CEP",
+            "WhatsApp", "E-mail", "Possui Dependentes", "Status", "Observações", "Data Envio"
+        ])
+
+        for r in rows:
+            data_env = r['data_envio'].strftime("%d/%m/%Y %H:%M:%S") if isinstance(r.get('data_envio'), datetime) else str(r.get('data_envio') or '')
+            writer.writerow([
+                r['protocolo'], r['nome_completo'], r['cpf'], r['rg'], f"{r['rg_orgao']}/{r['rg_uf']}", r['data_nascimento'],
+                r['sexo'], r['estado_civil'], r['nome_mae'], r['nome_pai'], r['titulo_eleitor'],
+                r['escolaridade'], r['curso_formacao'], r['ctps_numero'], r['ctps_serie'], r['logradouro'],
+                r['numero'], r['complemento'], r['bairro'], r['cidade'], r['uf'], r['cep'],
+                r['whatsapp'], r['email_pessoal'], "Sim" if r['possui_dependentes'] else "Não",
+                r['status'], r['observacoes'], data_env
+            ])
+
+        csv_data = "\ufeff" + output.getvalue()  # BOM UTF-8 for Excel
+        filename = f"recadastramentos_itps_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        
+        return Response(
+            content=csv_data.encode('utf-8'),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
     finally:
         conn.close()
