@@ -12,6 +12,10 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, Form, status, Re
 from fastapi.responses import FileResponse, JSONResponse, Response
 from core.database import get_folha_db
 
+class AdminLoginRequest(BaseModel):
+    usuario: str
+    senha: str
+
 class AdminUpdateRequest(BaseModel):
     status: Optional[str] = "ENVIADO"
     observacoes: Optional[str] = ""
@@ -20,6 +24,46 @@ class AdminUpdateRequest(BaseModel):
     setor: Optional[str] = ""
     vinculo: Optional[str] = ""
     data_admissao: Optional[str] = ""
+
+class AdminEditCompletoRequest(BaseModel):
+    nome_completo: Optional[str] = None
+    cpf: Optional[str] = None
+    rg: Optional[str] = None
+    rg_orgao: Optional[str] = None
+    rg_uf: Optional[str] = None
+    rg_data_expedicao: Optional[str] = None
+    data_nascimento: Optional[str] = None
+    sexo: Optional[str] = None
+    estado_civil: Optional[str] = None
+    nome_mae: Optional[str] = None
+    nome_pai: Optional[str] = None
+    titulo_eleitor: Optional[str] = None
+    titulo_zona: Optional[str] = None
+    titulo_secao: Optional[str] = None
+    ctps_numero: Optional[str] = None
+    ctps_serie: Optional[str] = None
+    ctps_uf: Optional[str] = None
+    escolaridade: Optional[str] = None
+    curso_formacao: Optional[str] = None
+    cep: Optional[str] = None
+    logradouro: Optional[str] = None
+    numero: Optional[str] = None
+    complemento: Optional[str] = None
+    bairro: Optional[str] = None
+    cidade: Optional[str] = None
+    uf: Optional[str] = None
+    whatsapp: Optional[str] = None
+    email_pessoal: Optional[str] = None
+    email_institucional: Optional[str] = None
+    possui_dependentes: Optional[bool] = None
+    dependentes_json: Optional[str] = None
+    matricula: Optional[str] = None
+    cargo: Optional[str] = None
+    setor: Optional[str] = None
+    vinculo: Optional[str] = None
+    data_admissao: Optional[str] = None
+    status: Optional[str] = None
+    observacoes: Optional[str] = None
 
 # Backward compatibility alias
 StatusUpdateRequest = AdminUpdateRequest
@@ -566,5 +610,122 @@ def admin_exportar_csv(
             media_type="text/csv",
             headers={"Content-Disposition": f"attachment; filename={filename}"}
         )
+    finally:
+        conn.close()
+
+
+# ========================================================
+# AUTENTICAÇÃO E EDIÇÃO COMPLETA (ADMINISTRATIVO GERH)
+# ========================================================
+
+ADMIN_USERS = {
+    "gerh": "itps123",
+    "admin": "itps123",
+    "rh": "itps123",
+    "gerh.itps": "gerh@2026"
+}
+
+@router.post("/admin/auth/login")
+def admin_login(req: AdminLoginRequest):
+    """Autentica o operador do RH/GERH para acesso aos dados sensíveis."""
+    u = req.usuario.strip().lower()
+    s = req.senha.strip()
+    
+    if u in ADMIN_USERS and ADMIN_USERS[u] == s:
+        token_data = f"ITPS-GERH-AUTH-{u}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:12]}"
+        return {
+            "success": True,
+            "mensagem": "Autenticado com sucesso!",
+            "token": token_data,
+            "usuario": "GERH / Recursos Humanos",
+            "perfil": "ADMINISTRADOR_RH",
+            "login": u
+        }
+    else:
+        raise HTTPException(status_code=401, detail="Usuário ou senha incorretos.")
+
+
+@router.put("/admin/{id}/editar-completo")
+def admin_editar_completo(id: int, req: AdminEditCompletoRequest):
+    """Permite ao administrador do RH editar todos os dados cadastrais, pessoais, endereço, dependentes e funcionais."""
+    conn = get_folha_db()
+    cursor = conn.cursor()
+    try:
+        # Verifica se o registro existe
+        cursor.execute("SELECT * FROM folha.recadastramentos WHERE id = %s", (id,))
+        antigo = cursor.fetchone()
+        if not antigo:
+            raise HTTPException(status_code=404, detail="Registro não encontrado.")
+
+        query = """
+            UPDATE folha.recadastramentos
+            SET nome_completo = COALESCE(%s, nome_completo),
+                cpf = COALESCE(%s, cpf),
+                rg = COALESCE(%s, rg),
+                rg_orgao = COALESCE(%s, rg_orgao),
+                rg_uf = COALESCE(%s, rg_uf),
+                rg_data_expedicao = COALESCE(%s, rg_data_expedicao),
+                data_nascimento = COALESCE(%s, data_nascimento),
+                sexo = COALESCE(%s, sexo),
+                estado_civil = COALESCE(%s, estado_civil),
+                nome_mae = COALESCE(%s, nome_mae),
+                nome_pai = COALESCE(%s, nome_pai),
+                titulo_eleitor = COALESCE(%s, titulo_eleitor),
+                titulo_zona = COALESCE(%s, titulo_zona),
+                titulo_secao = COALESCE(%s, titulo_secao),
+                ctps_numero = COALESCE(%s, ctps_numero),
+                ctps_serie = COALESCE(%s, ctps_serie),
+                ctps_uf = COALESCE(%s, ctps_uf),
+                escolaridade = COALESCE(%s, escolaridade),
+                curso_formacao = COALESCE(%s, curso_formacao),
+                cep = COALESCE(%s, cep),
+                logradouro = COALESCE(%s, logradouro),
+                numero = COALESCE(%s, numero),
+                complemento = COALESCE(%s, complemento),
+                bairro = COALESCE(%s, bairro),
+                cidade = COALESCE(%s, cidade),
+                uf = COALESCE(%s, uf),
+                whatsapp = COALESCE(%s, whatsapp),
+                email_pessoal = COALESCE(%s, email_pessoal),
+                email_institucional = COALESCE(%s, email_institucional),
+                possui_dependentes = COALESCE(%s, possui_dependentes),
+                dependentes_json = COALESCE(%s, dependentes_json),
+                matricula = COALESCE(%s, matricula),
+                cargo = COALESCE(%s, cargo),
+                setor = COALESCE(%s, setor),
+                vinculo = COALESCE(%s, vinculo),
+                data_admissao = COALESCE(%s, data_admissao),
+                status = COALESCE(%s, status),
+                observacoes = COALESCE(%s, observacoes)
+            WHERE id = %s
+            RETURNING *;
+        """
+        cursor.execute(
+            query,
+            (
+                req.nome_completo, req.cpf, req.rg, req.rg_orgao, req.rg_uf, req.rg_data_expedicao,
+                req.data_nascimento, req.sexo, req.estado_civil, req.nome_mae, req.nome_pai,
+                req.titulo_eleitor, req.titulo_zona, req.titulo_secao, req.ctps_numero, req.ctps_serie,
+                req.ctps_uf, req.escolaridade, req.curso_formacao, req.cep, req.logradouro, req.numero,
+                req.complemento, req.bairro, req.cidade, req.uf, req.whatsapp, req.email_pessoal,
+                req.email_institucional, req.possui_dependentes, req.dependentes_json, req.matricula,
+                req.cargo, req.setor, req.vinculo, req.data_admissao, req.status, req.observacoes,
+                id
+            )
+        )
+        row = cursor.fetchone()
+        conn.commit()
+        
+        dados = dict(row)
+        if isinstance(dados.get('data_envio'), datetime):
+            dados['data_envio_formatada'] = dados['data_envio'].strftime("%d/%m/%Y às %H:%M:%S")
+            dados['data_envio'] = dados['data_envio'].isoformat()
+            
+        try:
+            dados['dependentes'] = json.loads(dados.get('dependentes_json') or '[]')
+        except Exception:
+            dados['dependentes'] = []
+            
+        return {"success": True, "mensagem": "Ficha cadastral atualizada com sucesso pelo RH!", "servidor": dados}
     finally:
         conn.close()
