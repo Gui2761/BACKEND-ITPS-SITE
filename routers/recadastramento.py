@@ -12,9 +12,17 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, Form, status, Re
 from fastapi.responses import FileResponse, JSONResponse, Response
 from core.database import get_folha_db
 
-class StatusUpdateRequest(BaseModel):
-    status: str
+class AdminUpdateRequest(BaseModel):
+    status: Optional[str] = "ENVIADO"
     observacoes: Optional[str] = ""
+    matricula: Optional[str] = ""
+    cargo: Optional[str] = ""
+    setor: Optional[str] = ""
+    vinculo: Optional[str] = ""
+    data_admissao: Optional[str] = ""
+
+# Backward compatibility alias
+StatusUpdateRequest = AdminUpdateRequest
 
 router = APIRouter(prefix="/api/recadastramento", tags=["Recadastramento"])
 
@@ -428,25 +436,41 @@ def admin_obter_detalhes(id: int):
 
 
 @router.patch("/admin/{id}/status")
-def admin_atualizar_status(id: int, req: StatusUpdateRequest):
-    """Atualiza o status e observações de um recadastramento."""
+@router.patch("/admin/{id}/dados-funcionais")
+def admin_atualizar_dados(id: int, req: AdminUpdateRequest):
+    """Atualiza status, observações e dados funcionais preenchidos pelo RH."""
     conn = get_folha_db()
     cursor = conn.cursor()
     try:
         cursor.execute(
             """
             UPDATE folha.recadastramentos
-            SET status = %s, observacoes = %s
+            SET status = COALESCE(%s, status),
+                observacoes = %s,
+                matricula = %s,
+                cargo = %s,
+                setor = %s,
+                vinculo = %s,
+                data_admissao = %s
             WHERE id = %s
-            RETURNING id, protocolo, status, observacoes;
+            RETURNING id, protocolo, nome_completo, status, observacoes, matricula, cargo, setor, vinculo, data_admissao;
             """,
-            (req.status.strip(), req.observacoes.strip() if req.observacoes else "", id)
+            (
+                req.status.strip() if req.status else "ENVIADO",
+                req.observacoes.strip() if req.observacoes else "",
+                req.matricula.strip() if req.matricula else "",
+                req.cargo.strip() if req.cargo else "",
+                req.setor.strip() if req.setor else "",
+                req.vinculo.strip() if req.vinculo else "",
+                req.data_admissao.strip() if req.data_admissao else "",
+                id
+            )
         )
         row = cursor.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Registro não encontrado.")
         conn.commit()
-        return {"success": True, "mensagem": "Status atualizado com sucesso!", "dados": dict(row)}
+        return {"success": True, "mensagem": "Dados funcionais e parecer salvos com sucesso!", "dados": dict(row)}
     finally:
         conn.close()
 
