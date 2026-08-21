@@ -31,6 +31,11 @@ app.include_router(comprasnet.router)
 app.include_router(inmetro.router)
 app.include_router(recadastramento.router)
 
+# Monta os arquivos estáticos do frontend (para funcionar via porta única e túnel Cloudflare)
+SITE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "ITPS-SITE"))
+if os.path.exists(SITE_DIR):
+    app.mount("/", StaticFiles(directory=SITE_DIR, html=True), name="site")
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
