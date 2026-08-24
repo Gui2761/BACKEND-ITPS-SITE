@@ -18,7 +18,7 @@ let arquivosSelecionados = {
   doc_dependentes: []
 };
 
-// URL base do Backend FastAPI (sempre usa a mesma origem — funciona com Tunnel, Proxy Reverso e acesso direto)
+// URL base do Backend FastAPI (Apache faz proxy reverso /api/ → localhost:8000)
 const API_BASE_URL = window.location.origin;
 
 document.addEventListener('DOMContentLoaded', () => {
