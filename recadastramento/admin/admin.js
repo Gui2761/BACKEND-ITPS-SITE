@@ -5,10 +5,10 @@
  * ========================================================
  */
 
-// URL base do Backend FastAPI (Detecta automaticamente se está via túnel Cloudflare, Intranet ou Localhost)
-const API_BASE_URL = window.location.port === '8080'
-  ? (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://127.0.0.1:8000' : `${window.location.protocol}//${window.location.hostname}:8000`)
-  : window.location.origin;
+// URL base do Backend FastAPI (Detecta automaticamente se está via túnel Cloudflare ou Intranet/Localhost)
+const API_BASE_URL = (window.location.hostname.includes('trycloudflare.com') || window.location.port === '8000')
+  ? window.location.origin
+  : `${window.location.protocol}//${window.location.hostname}:8000`;
 
 // Chaves de Armazenamento Local
 const STORAGE_AUTH_KEY = 'ITPS_GERH_ADMIN_TOKEN';
