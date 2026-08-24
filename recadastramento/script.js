@@ -18,10 +18,8 @@ let arquivosSelecionados = {
   doc_dependentes: []
 };
 
-// URL base do Backend FastAPI (Detecta automaticamente se está via túnel Cloudflare ou Intranet/Localhost)
-const API_BASE_URL = (window.location.hostname.includes('trycloudflare.com') || window.location.port === '8000')
-  ? window.location.origin
-  : `${window.location.protocol}//${window.location.hostname}:8000`;
+// URL base do Backend FastAPI (sempre usa a mesma origem — funciona com Tunnel, Proxy Reverso e acesso direto)
+const API_BASE_URL = window.location.origin;
 
 document.addEventListener('DOMContentLoaded', () => {
   inicializarMascaras();
