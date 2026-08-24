@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Recadastramento & Contratação de Servidores — ITPS (GERH)</title>
+  
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="../images/Itps.png">
+  
+  <!-- Fontes Google Inter e Outfit -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Font Awesome para ícones -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- CSS Customizado -->
+  <link rel="stylesheet" href="style.css?v=20260821_3">
+</head>
+<body>
+
+  <!-- Top Header Institucional -->
+  <header class="main-header">
+    <div class="header-container">
+      <div class="header-brand">
+        <a href="../index.html" class="brand-link" title="Voltar ao Portal ITPS">
+          <div class="brand-titles">
+            <span class="brand-name">ITPS</span>
+            <span class="brand-sub">Gerência de Recursos Humanos (GERH)</span>
+          </div>
+        </a>
+      </div>
+      
+      <div class="header-tag">
+        <a href="admin/index.html" class="btn-voltar-portal" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); margin-right: 0.5rem;" title="Acesso Administrativo GERH">
+          <i class="fa-solid fa-shield-halved"></i>
+          <span>Painel RH (Admin)</span>
+        </a>
+        <a href="../index.html" class="btn-voltar-portal">
+          <i class="fa-solid fa-house"></i>
+          <span>Portal Principal</span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Banner / Hero de Apresentação -->
+  <section class="hero-banner">
+    <div class="hero-content">
+      <div class="hero-badge">
+        <i class="fa-solid fa-file-signature"></i>
+        <span>Documentação para Contratação & Recadastramento</span>
+      </div>
+      <h1 class="hero-title">Atualização Cadastral e Admissão de Servidores</h1>
+      <p class="hero-desc">
+        Envio digital da documentação obrigatória exigida pela Gerência de Recursos Humanos (GERH) do ITPS para contratação (cargos comissionados, efetivos, estagiários e PSS) e recadastramento anual.
+      </p>
+      
+      <div class="hero-info-cards">
+        <div class="info-pill">
+          <i class="fa-solid fa-phone"></i>
+          <span>GERH: (79) 3198-8809</span>
+        </div>
+        <div class="info-pill">
+          <i class="fa-solid fa-envelope"></i>
+          <span>gerh@itps.se.gov.br</span>
+        </div>
+        <div class="info-pill">
+          <i class="fa-solid fa-shield-halved"></i>
+          <span>Dados protegidos pela LGPD</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Container Principal do Formulário -->
+  <main class="wizard-container">
+    
+    <!-- Stepper de Navegação Superior (5 Etapas) -->
+    <div class="stepper-wrapper">
+      <div class="stepper-progress-bar" id="stepperProgressBar"></div>
+      
+      <div class="stepper-steps" id="stepperSteps">
+        
+        <div class="step-item active" data-step="1">
+          <div class="step-circle">
+            <i class="fa-solid fa-user"></i>
+            <span class="step-number">1</span>
+          </div>
+          <span class="step-label">Dados Pessoais</span>
+        </div>
+
+        <div class="step-item" data-step="2">
+          <div class="step-circle">
+            <i class="fa-solid fa-location-dot"></i>
+            <span class="step-number">2</span>
+          </div>
+          <span class="step-label">Endereço & Contato</span>
+        </div>
+
+        <div class="step-item" data-step="3">
+          <div class="step-circle">
+            <i class="fa-solid fa-people-roof"></i>
+            <span class="step-number">3</span>
+          </div>
+          <span class="step-label">Dependentes</span>
+        </div>
+
+        <div class="step-item" data-step="4">
+          <div class="step-circle">
+            <i class="fa-solid fa-paperclip"></i>
+            <span class="step-number">4</span>
+          </div>
+          <span class="step-label">Documentação</span>
+        </div>
+
+        <div class="step-item" data-step="5">
+          <div class="step-circle">
+            <i class="fa-solid fa-clipboard-check"></i>
+            <span class="step-number">5</span>
+          </div>
+          <span class="step-label">Revisão & Envio</span>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Card Central com o Formulário -->
+    <div class="form-card">
+      <form id="recadastramentoForm" novalidate enctype="multipart/form-data">
+
+        <!-- ======================================================== -->
+        <!-- ETAPA 1: DADOS PESSOAIS & ESCOLARIDADE -->
+        <!-- ======================================================== -->
+        <div class="form-step-content active" id="stepContent1">
+          <div class="step-header">
+            <div class="step-icon-badge">
+              <i class="fa-solid fa-user"></i>
+            </div>
+            <div>
+              <h2 class="step-heading">1. Identificação e Dados Pessoais</h2>
+              <p class="step-subheading">Informe seus dados básicos conforme constam no seu documento oficial.</p>
+            </div>
+          </div>
+
+          <div class="form-grid">
+            
+            <div class="form-group col-span-2">
+              <label for="nome_completo" class="form-label">Nome Completo <span class="req">*</span></label>
+              <div class="input-with-icon">
+                <i class="fa-regular fa-user"></i>
+                <input type="text" id="nome_completo" name="nome_completo" class="form-control" placeholder="Ex: Maria dos Santos Silva" required>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="cpf" class="form-label">CPF <span class="req">*</span></label>
+              <div class="input-with-icon">
+                <i class="fa-solid fa-fingerprint"></i>
+                <input type="text" id="cpf" name="cpf" class="form-control" placeholder="000.000.000-00" maxlength="14" required>
+              </div>
+              <small class="field-feedback" id="cpfFeedback"></small>
+            </div>
+
+            <div class="form-group">
+              <label for="data_nascimento" class="form-label">Data de Nascimento <span class="req">*</span></label>
+              <div class="input-with-icon">
+                <i class="fa-regular fa-calendar"></i>
+                <input type="date" id="data_nascimento" name="data_nascimento" class="form-control" required>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="rg" class="form-label">Número do RG <span class="req">*</span></label>
+              <div class="input-with-icon">
+                <i class="fa-regular fa-id-card"></i>
+                <input type="text" id="rg" name="rg" class="form-control" placeholder="Ex: 12345678" required>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="rg_orgao" class="form-label">Órgão Emissor / UF <span class="req">*</span></label>
+              <div class="input-group-split">
+                <input type="text" id="rg_orgao" name="rg_orgao" class="form-control" placeholder="SSP" required>
+                <select id="rg_uf" name="rg_uf" class="form-control select-uf" required>
+                  <option value="AC">AC</option>
+                  <option value="AL">AL</option>
+                  <option value="AP">AP</option>
+                  <option value="AM">AM</option>
+                  <option value="BA">BA</option>
+                  <option value="CE">CE</option>
+                  <option value="DF">DF</option>
+                  <option value="ES">ES</option>
+                  <option value="GO">GO</option>
+                  <option value="MA">MA</option>
+                  <option value="MT">MT</option>
+                  <option value="MS">MS</option>
+                  <option value="MG">MG</option>
+                  <option value="PA">PA</option>
+                  <option value="PB">PB</option>
+                  <option value="PR">PR</option>
+                  <option value="PE">PE</option>
+                  <option value="PI">PI</option>
+                  <option value="RJ">RJ</option>
+                  <option value="RN">RN</option>
+                  <option value="RS">RS</option>
+                  <option value="RO">RO</option>
+                  <option value="RR">RR</option>
+                  <option value="SC">SC</option>
+                  <option value="SP">SP</option>
+                  <option value="SE" selected>SE</option>
+                  <option value="TO">TO</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="rg_data_expedicao" class="form-label">Data de Expedição do RG</label>
+              <div class="input-with-icon">
+                <i class="fa-regular fa-calendar"></i>
+                <input type="date" id="rg_data_expedicao" name="rg_data_expedicao" class="form-control">
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="sexo" class="form-label">Sexo / Gênero <span class="req">*</span></label>
+              <select id="sexo" name="sexo" class="form-control" required>
+                <option value="">Selecione...</option>
+                <option value="Feminino">Feminino</option>
+                <option value="Masculino">Masculino</option>
+                <option value="Outro">Outro</option>
+                <option value="Prefiro não informar">Prefiro não informar</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="estado_civil" class="form-label">Estado Civil <span class="req">*</span></label>
+              <select id="estado_civil" name="estado_civil" class="form-control" required>
+                <option value="">Selecione...</option>
+                <option value="Solteiro(a)">Solteiro(a)</option>
+                <option value="Casado(a)">Casado(a)</option>
+                <option value="União Estável">União Estável</option>
+                <option value="Divorciado(a)">Divorciado(a)</option>
+                <option value="Viúvo(a)">Viúvo(a)</option>
+                <option value="Separado(a)">Separado(a)</option>
+              </select>
+            </div>
+
+            <div class="form-group col-span-2">
+              <label for="nome_mae" class="form-label">Nome da Mãe <span class="req">*</span></label>
+              <div class="input-with-icon">
+                <i class="fa-solid fa-person-breastfeeding"></i>
+                <input type="text" id="nome_mae" name="nome_mae" class="form-control" placeholder="Nome completo da mãe" required>
+              </div>
+            </div>
+
+            <div class="form-group col-span-2">
+              <label for="nome_pai" class="form-label">Nome do Pai</label>
+              <div class="input-with-icon">
+                <i class="fa-solid fa-person"></i>
+                <input type="text" id="nome_pai" name="nome_pai" class="form-control" placeholder="Nome completo do pai (opcional)">
+              </div>
+            </div>
+
+            <div class="col-divider col-span-full"></div>
+
+            <!-- Título de Eleitor & CTPS -->
+            <div class="form-group">
+              <label for="titulo_eleitor" class="form-label">Título de Eleitor <span class="req">*</span></label>
+              <div class="input-with-icon">
+                <i class="fa-solid fa-check-to-slot"></i>
+                <input type="text" id="titulo_eleitor" name="titulo_eleitor" class="form-control" placeholder="Número do título" required>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Zona e Seção</label>
+              <div class="input-group-split">
+                <input type="text" id="titulo_zona" name="titulo_zona" class="form-control" placeholder="Zona (ex: 001)">
+                <input type="text" id="titulo_secao" name="titulo_secao" class="form-control" placeholder="Seção (ex: 0123)">
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="ctps_numero" class="form-label">Carteira de Trabalho (CTPS / Série)</label>
+              <div class="input-group-split">
+                <input type="text" id="ctps_numero" name="ctps_numero" class="form-control" placeholder="Nº da CTPS ou Digital">
+                <input type="text" id="ctps_serie" name="ctps_serie" class="form-control" placeholder="Série" style="max-width: 100px;">
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="escolaridade" class="form-label">Grau de Escolaridade <span class="req">*</span></label>
+              <select id="escolaridade" name="escolaridade" class="form-control" required>
+                <option value="">Selecione a escolaridade...</option>
+                <option value="Ensino Fundamental Completo">Ensino Fundamental Completo</option>
+                <option value="Ensino Médio Completo">Ensino Médio Completo</option>
+                <option value="Ensino Técnico">Ensino Técnico</option>
+                <option value="Superior Incompleto (Graduando)">Superior Incompleto (Graduando)</option>
+                <option value="Superior Completo">Superior Completo (Graduado)</option>
+                <option value="Pós-Graduação / Especialização">Pós-Graduação / Especialização</option>
+                <option value="Mestrado">Mestrado</option>
+                <option value="Doutorado">Doutorado</option>
+              </select>
+            </div>
+
+            <div class="form-group col-span-2">
+              <label for="curso_formacao" class="form-label">Curso / Formação Acadêmica</label>
+              <div class="input-with-icon">
+                <i class="fa-solid fa-graduation-cap"></i>
+                <input type="text" id="curso_formacao" name="curso_formacao" class="form-control" placeholder="Ex: Química, Engenharia de Alimentos, Administração, Direito...">
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- ======================================================== -->
+        <!-- ETAPA 2: ENDEREÇO & CONTATO -->
+        <!-- ======================================================== -->
+        <div class="form-step-content" id="stepContent2">
+          <div class="step-header">
+            <div class="step-icon-badge">
+              <i class="fa-solid fa-location-dot"></i>
+            </div>
+            <div>
+              <h2 class="step-heading">2. Endereço Residencial e Contatos</h2>
+              <p class="step-subheading">Digite seu CEP para preenchimento automático das informações de endereço.</p>
+            </div>
+          </div>
+
+          <div class="form-grid">
+            
+            <div class="form-group">
+              <label for="cep" class="form-label">CEP <span class="req">*</span></label>
+              <div class="input-with-icon">
+                <i class="fa-solid fa-map-pin"></i>
+                <input type="text" id="cep" name="cep" class="form-control" placeholder="49000-000" maxlength="9" required>
+                <div class="cep-spinner" id="cepSpinner"><i class="fa-solid fa-spinner fa-spin"></i></div>
+              </div>
+              <small class="field-feedback" id="cepFeedback"></small>
+            </div>
+
+            <div class="form-group col-span-2">
+              <label for="logradouro" class="form-label">Logradouro (Rua, Avenida, Praça) <span class="req">*</span></label>
+              <input type="text" id="logradouro" name="logradouro" class="form-control" placeholder="Ex: Av. Beira Mar" required>
+            </div>
+
+            <div class="form-group">
+              <label for="numero" class="form-label">Número <span class="req">*</span></label>
+              <input type="text" id="numero" name="numero" class="form-control" placeholder="Ex: 120 ou S/N" required>
+            </div>
+
+            <div class="form-group">
+              <label for="complemento" class="form-label">Complemento</label>
+              <input type="text" id="complemento" name="complemento" class="form-control" placeholder="Ex: Apt 302, Bloco B">
+            </div>
+
+            <div class="form-group">
+              <label for="bairro" class="form-label">Bairro <span class="req">*</span></label>
+              <input type="text" id="bairro" name="bairro" class="form-control" placeholder="Ex: 13 de Julho" required>
+            </div>
+
+            <div class="form-group">
+              <label for="cidade" class="form-label">Cidade <span class="req">*</span></label>
+              <input type="text" id="cidade" name="cidade" class="form-control" placeholder="Ex: Aracaju" required>
+            </div>
+
+            <div class="form-group">
+              <label for="uf" class="form-label">Estado (UF) <span class="req">*</span></label>
+              <select id="uf" name="uf" class="form-control" required>
+                <option value="AC">Acre (AC)</option>
+                <option value="AL">Alagoas (AL)</option>
+                <option value="AP">Amapá (AP)</option>
+                <option value="AM">Amazonas (AM)</option>
+                <option value="BA">Bahia (BA)</option>
+                <option value="CE">Ceará (CE)</option>
+                <option value="DF">Distrito Federal (DF)</option>
+                <option value="ES">Espírito Santo (ES)</option>
+                <option value="GO">Goiás (GO)</option>
+                <option value="MA">Maranhão (MA)</option>
+                <option value="MT">Mato Grosso (MT)</option>
+                <option value="MS">Mato Grosso do Sul (MS)</option>
+                <option value="MG">Minas Gerais (MG)</option>
+                <option value="PA">Pará (PA)</option>
+                <option value="PB">Paraíba (PB)</option>
+                <option value="PR">Paraná (PR)</option>
+                <option value="PE">Pernambuco (PE)</option>
+                <option value="PI">Piauí (PI)</option>
+                <option value="RJ">Rio de Janeiro (RJ)</option>
+                <option value="RN">Rio Grande do Norte (RN)</option>
+                <option value="RS">Rio Grande do Sul (RS)</option>
+                <option value="RO">Rondônia (RO)</option>
+                <option value="RR">Roraima (RR)</option>
+                <option value="SC">Santa Catarina (SC)</option>
+                <option value="SP">São Paulo (SP)</option>
+                <option value="SE" selected>Sergipe (SE)</option>
+                <option value="TO">Tocantins (TO)</option>
+              </select>
+            </div>
+
+            <div class="col-divider col-span-full"></div>
+
+            <div class="form-group">
+              <label for="whatsapp" class="form-label">Celular / WhatsApp <span class="req">*</span></label>
+              <div class="input-with-icon">
+                <i class="fa-brands fa-whatsapp text-green"></i>
+                <input type="tel" id="whatsapp" name="whatsapp" class="form-control" placeholder="(79) 99999-9999" maxlength="15" required>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="email_pessoal" class="form-label">E-mail Pessoal <span class="req">*</span></label>
+              <div class="input-with-icon">
+                <i class="fa-regular fa-envelope"></i>
+                <input type="email" id="email_pessoal" name="email_pessoal" class="form-control" placeholder="seuemail@gmail.com" required>
+              </div>
+            </div>
+
+            <div class="form-group col-span-2">
+              <label for="email_institucional" class="form-label">E-mail Institucional (se possuir)</label>
+              <div class="input-with-icon">
+                <i class="fa-solid fa-envelope-circle-check text-blue"></i>
+                <input type="email" id="email_institucional" name="email_institucional" class="form-control" placeholder="nome.sobrenome@itps.se.gov.br">
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- ======================================================== -->
+        <!-- ======================================================== -->
+        <!-- ETAPA 3: DEPENDENTES -->
+        <!-- ======================================================== -->
+        <div class="form-step-content" id="stepContent3">
+          <div class="step-header">
+            <div class="step-icon-badge">
+              <i class="fa-solid fa-people-roof"></i>
+            </div>
+            <div>
+              <h2 class="step-heading">3. Dependentes e Informações Familiares</h2>
+              <p class="step-subheading">Cadastre filhos, cônjuge ou outros dependentes para deduções de IRRF ou salário-família.</p>
+            </div>
+          </div>
+
+          <div class="dependentes-question-box">
+            <label class="question-label">Você possui dependentes legais?</label>
+            <div class="radio-toggle-group">
+              <label class="radio-toggle-btn">
+                <input type="radio" name="possui_dependentes_radio" value="nao" checked>
+                <span><i class="fa-solid fa-circle-xmark"></i> Não possuo dependentes</span>
+              </label>
+              <label class="radio-toggle-btn">
+                <input type="radio" name="possui_dependentes_radio" value="sim">
+                <span><i class="fa-solid fa-circle-check"></i> Sim, possuo dependentes</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Container dinâmico exibido apenas se "Sim" -->
+          <div id="dependentesContainer" class="dependentes-wrapper hidden">
+            
+            <div class="dependentes-list" id="dependentesList">
+              <!-- Cards de dependentes gerados dinamicamente via JS -->
+            </div>
+
+            <button type="button" class="btn-add-dependente" id="btnAddDependente">
+              <i class="fa-solid fa-plus"></i>
+              <span>Adicionar Dependente</span>
+            </button>
+
+            <div class="alert-box alert-info">
+              <i class="fa-solid fa-circle-info"></i>
+              <span><strong>Atenção:</strong> Na próxima etapa você poderá anexar as Certidões de Nascimento, Casamento ou RG de cada dependente cadastrado.</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- ======================================================== -->
+        <!-- ETAPA 4: UPLOAD DE DOCUMENTOS (CHECKLIST OFICIAL GERH) -->
+        <!-- ======================================================== -->
+        <div class="form-step-content" id="stepContent4">
+          <div class="step-header">
+            <div class="step-icon-badge">
+              <i class="fa-solid fa-paperclip"></i>
+            </div>
+            <div>
+              <h2 class="step-heading">4. Documentação para Contratação & Recadastramento</h2>
+              <p class="step-subheading">Conforme a lista oficial de documentos exigidos pela <strong>GERH/ITPS</strong>. Envie fotos nítidas ou arquivos PDF (Máx. 10MB cada).</p>
+            </div>
+          </div>
+
+          <div class="upload-cards-grid">
+
+            <!-- 1. Foto 3x4 -->
+            <div class="upload-card" id="dropzoneFoto3x4">
+              <div class="upload-card-header">
+                <div class="upload-number">1</div>
+                <div>
+                  <h3 class="upload-card-title">Foto 3x4 (Rosto / Perfil) <span class="req">*</span></h3>
+                  <p class="upload-card-desc">Foto nítida de rosto com fundo neutro para emissão do crachá e ficha funcional.</p>
+                </div>
+              </div>
+
+              <div class="dropzone-box" onclick="document.getElementById('doc_foto3x4').click()">
+                <input type="file" id="doc_foto3x4" name="doc_foto3x4" class="hidden-file-input" accept="image/png,image/jpeg,image/jpg,.pdf">
+                <div class="dropzone-idle" id="idleFoto3x4">
+                  <i class="fa-solid fa-camera dropzone-icon"></i>
+                  <p class="dropzone-text">Clique para selecionar sua Foto 3x4</p>
+                  <span class="dropzone-hint">JPG, PNG (Máx 10MB)</span>
+                </div>
+                <div class="dropzone-preview hidden" id="prevFoto3x4"></div>
+              </div>
+            </div>
+
+            <!-- 2. RG, CPF e/ou CNH -->
+            <div class="upload-card" id="dropzoneIdentificacao">
+              <div class="upload-card-header">
+                <div class="upload-number">2</div>
+                <div>
+                  <h3 class="upload-card-title">RG, CPF e/ou CNH <span class="req">*</span></h3>
+                  <p class="upload-card-desc">Documento de identificação oficial com foto (frente e verso legíveis).</p>
+                </div>
+              </div>
+
+              <div class="dropzone-box" onclick="document.getElementById('doc_identificacao').click()">
+                <input type="file" id="doc_identificacao" name="doc_identificacao" class="hidden-file-input" accept=".pdf,image/png,image/jpeg,image/jpg" required>
+                <div class="dropzone-idle" id="idleIdentificacao">
+                  <i class="fa-solid fa-id-card dropzone-icon"></i>
+                  <p class="dropzone-text">Clique para selecionar o RG/CNH</p>
+                  <span class="dropzone-hint">PDF, PNG, JPG (Máx 10MB)</span>
+                </div>
+                <div class="dropzone-preview hidden" id="prevIdentificacao"></div>
+              </div>
+            </div>
+
+            <!-- 3. Título de Eleitor -->
+            <div class="upload-card" id="dropzoneTitulo">
+              <div class="upload-card-header">
+                <div class="upload-number">3</div>
+                <div>
+                  <h3 class="upload-card-title">Título de Eleitor / Quitação Eleitoral</h3>
+                  <p class="upload-card-desc">Cópia do título ou Certidão de Quitação Eleitoral do TSE.</p>
+                </div>
+              </div>
+
+              <div class="dropzone-box" onclick="document.getElementById('doc_titulo').click()">
+                <input type="file" id="doc_titulo" name="doc_titulo" class="hidden-file-input" accept=".pdf,image/png,image/jpeg,image/jpg">
+                <div class="dropzone-idle" id="idleTitulo">
+                  <i class="fa-solid fa-check-to-slot dropzone-icon"></i>
+                  <p class="dropzone-text">Clique para selecionar o Título de Eleitor</p>
+                  <span class="dropzone-hint">PDF, PNG, JPG (Máx 10MB)</span>
+                </div>
+                <div class="dropzone-preview hidden" id="prevTitulo"></div>
+              </div>
+            </div>
+
+            <!-- 4. Comprovante de Residência -->
+            <div class="upload-card" id="dropzoneResidencia">
+              <div class="upload-card-header">
+                <div class="upload-number">4</div>
+                <div>
+                  <h3 class="upload-card-title">Comprovante de Residência Recente <span class="req">*</span></h3>
+                  <p class="upload-card-desc">Conta de luz, água, gás ou telefone dos últimos 90 dias.</p>
+                </div>
+              </div>
+
+              <div class="dropzone-box" onclick="document.getElementById('doc_residencia').click()">
+                <input type="file" id="doc_residencia" name="doc_residencia" class="hidden-file-input" accept=".pdf,image/png,image/jpeg,image/jpg" required>
+                <div class="dropzone-idle" id="idleResidencia">
+                  <i class="fa-solid fa-house-chimney dropzone-icon"></i>
+                  <p class="dropzone-text">Clique para selecionar o comprovante de residência</p>
+                  <span class="dropzone-hint">PDF, PNG, JPG (Máx 10MB)</span>
+                </div>
+                <div class="dropzone-preview hidden" id="prevResidencia"></div>
+              </div>
+            </div>
+
+            <!-- 5. Carteira de Trabalho -->
+            <div class="upload-card" id="dropzoneCtps">
+              <div class="upload-card-header">
+                <div class="upload-number">5</div>
+                <div>
+                  <h3 class="upload-card-title">Carteira de Trabalho (CTPS)</h3>
+                  <p class="upload-card-desc">Cópia da página de identificação ou PDF da Carteira de Trabalho Digital.</p>
+                </div>
+              </div>
+
+              <div class="dropzone-box" onclick="document.getElementById('doc_ctps').click()">
+                <input type="file" id="doc_ctps" name="doc_ctps" class="hidden-file-input" accept=".pdf,image/png,image/jpeg,image/jpg">
+                <div class="dropzone-idle" id="idleCtps">
+                  <i class="fa-solid fa-address-book dropzone-icon"></i>
+                  <p class="dropzone-text">Clique para selecionar a Carteira de Trabalho</p>
+                  <span class="dropzone-hint">PDF, PNG, JPG (Máx 10MB)</span>
+                </div>
+                <div class="dropzone-preview hidden" id="prevCtps"></div>
+              </div>
+            </div>
+
+            <!-- 6. Grau de Escolaridade -->
+            <div class="upload-card" id="dropzoneEscolaridade">
+              <div class="upload-card-header">
+                <div class="upload-number">6</div>
+                <div>
+                  <h3 class="upload-card-title">Comprovante de Grau de Escolaridade</h3>
+                  <p class="upload-card-desc">Diploma de graduação, certificado de conclusão ou declaração escolar.</p>
+                </div>
+              </div>
+
+              <div class="dropzone-box" onclick="document.getElementById('doc_escolaridade').click()">
+                <input type="file" id="doc_escolaridade" name="doc_escolaridade" class="hidden-file-input" accept=".pdf,image/png,image/jpeg,image/jpg">
+                <div class="dropzone-idle" id="idleEscolaridade">
+                  <i class="fa-solid fa-graduation-cap dropzone-icon"></i>
+                  <p class="dropzone-text">Clique para selecionar o Diploma ou Certificado</p>
+                  <span class="dropzone-hint">PDF, PNG, JPG (Máx 10MB)</span>
+                </div>
+                <div class="dropzone-preview hidden" id="prevEscolaridade"></div>
+              </div>
+            </div>
+
+            <!-- 7. Documentos dos Dependentes (Condicional - Exibido apenas se houver dependentes) -->
+            <div class="upload-card hidden" id="cardUploadDependentes">
+              <div class="upload-card-header">
+                <div class="upload-number">7</div>
+                <div>
+                  <h3 class="upload-card-title">Documentos dos Dependentes <span class="req">*</span></h3>
+                  <p class="upload-card-desc">Certidões de nascimento, casamento ou RG dos dependentes cadastrados.</p>
+                </div>
+              </div>
+
+              <div class="dropzone-box" onclick="document.getElementById('doc_dependentes').click()">
+                <input type="file" id="doc_dependentes" name="doc_dependentes" class="hidden-file-input" accept=".pdf,image/png,image/jpeg,image/jpg" multiple>
+                <div class="dropzone-idle" id="idleDependentes">
+                  <i class="fa-solid fa-folder-open dropzone-icon"></i>
+                  <p class="dropzone-text">Clique para selecionar os documentos dos dependentes</p>
+                  <span class="dropzone-hint">Você pode selecionar múltiplos arquivos (PDF, PNG, JPG)</span>
+                </div>
+                <div class="dropzone-preview hidden" id="prevDependentes"></div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- ======================================================== -->
+        <!-- ETAPA 5: REVISÃO, DECLARAÇÃO & ENVIO -->
+        <!-- ======================================================== -->
+        <div class="form-step-content" id="stepContent5">
+          <div class="step-header">
+            <div class="step-icon-badge">
+              <i class="fa-solid fa-clipboard-check"></i>
+            </div>
+            <div>
+              <h2 class="step-heading">5. Revisão Final e Declaração de Veracidade</h2>
+              <p class="step-subheading">Confira atentamente os dados preenchidos antes de confirmar o envio.</p>
+            </div>
+          </div>
+
+          <!-- Espelho / Resumo dos Dados -->
+          <div class="review-sections-container">
+            
+            <div class="review-card">
+              <div class="review-card-header">
+                <span><i class="fa-solid fa-user"></i> 1. Dados Pessoais & Escolaridade</span>
+                <button type="button" class="btn-edit-step" onclick="irParaEtapa(1)"><i class="fa-solid fa-pen"></i> Editar</button>
+              </div>
+              <div class="review-grid" id="revDadosPessoais">
+                <!-- Preenchido dinamicamente via JS -->
+              </div>
+            </div>
+
+            <div class="review-card">
+              <div class="review-card-header">
+                <span><i class="fa-solid fa-location-dot"></i> 2. Endereço e Contato</span>
+                <button type="button" class="btn-edit-step" onclick="irParaEtapa(2)"><i class="fa-solid fa-pen"></i> Editar</button>
+              </div>
+              <div class="review-grid" id="revEnderecoContato">
+                <!-- Preenchido dinamicamente via JS -->
+              </div>
+            </div>
+
+            <div class="review-card">
+              <div class="review-card-header">
+                <span><i class="fa-solid fa-people-roof"></i> 3. Dependentes</span>
+                <button type="button" class="btn-edit-step" onclick="irParaEtapa(3)"><i class="fa-solid fa-pen"></i> Editar</button>
+              </div>
+              <div class="review-grid" id="revDependentes">
+                <!-- Preenchido dinamicamente via JS -->
+              </div>
+            </div>
+
+            <div class="review-card">
+              <div class="review-card-header">
+                <span><i class="fa-solid fa-paperclip"></i> 4. Documentos Anexados</span>
+                <button type="button" class="btn-edit-step" onclick="irParaEtapa(4)"><i class="fa-solid fa-pen"></i> Editar</button>
+              </div>
+              <div class="review-files-list" id="revDocumentos">
+                <!-- Preenchido dinamicamente via JS -->
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Termo de Veracidade e Declaração Legal -->
+          <div class="termo-declaracao-box">
+            <div class="termo-header">
+              <i class="fa-solid fa-scale-balanced"></i>
+              <h3>Termo de Declaração e Responsabilidade</h3>
+            </div>
+            <p class="termo-text">
+              Declaro, sob as penas da lei (Artigo 299 do Código Penal Brasileiro - Falsidade Ideológica), que todas as informações prestadas neste formulário e os documentos comprobatórios anexados são <strong>verdadeiros, completos e de minha inteira responsabilidade</strong>, autorizando o ITPS a utilizá-los estritamente para fins de gestão de pessoas, contratação e obrigações legais perante órgãos fiscalizadores e previdenciários.
+            </p>
+            
+            <label class="termo-checkbox-label">
+              <input type="checkbox" id="aceite_termo" name="aceite_termo" required>
+              <span class="custom-checkbox"></span>
+              <span class="checkbox-text"><strong>Li, concordo e declaro a veracidade de todas as informações prestadas.</strong></span>
+            </label>
+          </div>
+
+        </div>
+
+        <!-- ======================================================== -->
+        <!-- BARRA DE BOTÕES DE AÇÃO INFERIOR -->
+        <!-- ======================================================== -->
+        <div class="form-actions-bar">
+          <button type="button" class="btn-action btn-prev" id="btnVoltar" onclick="etapaAnterior()" style="visibility: hidden;">
+            <i class="fa-solid fa-arrow-left"></i>
+            <span>Voltar</span>
+          </button>
+
+          <div class="actions-right">
+            <span class="step-indicator-text" id="stepIndicatorText">Passo 1 de 5</span>
+            
+            <button type="button" class="btn-action btn-next" id="btnAvancar" onclick="proximaEtapa()">
+              <span>Próximo Passo</span>
+              <i class="fa-solid fa-arrow-right"></i>
+            </button>
+
+            <button type="submit" class="btn-action btn-submit hidden" id="btnEnviar">
+              <i class="fa-solid fa-paper-plane"></i>
+              <span>Finalizar e Enviar Recadastramento</span>
+            </button>
+          </div>
+        </div>
+
+      </form>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- TELA DE SUCESSO & COMPROVANTE OFICIAL -->
+    <!-- ======================================================== -->
+    <div class="success-screen-card hidden" id="successScreen">
+      
+      <div class="success-badge-top">
+        <i class="fa-solid fa-circle-check"></i>
+      </div>
+
+      <h2 class="success-title">Recadastramento Concluído com Sucesso!</h2>
+      <p class="success-subtitle">Suas informações e documentos foram transmitidos e registrados com segurança junto ao GERH/ITPS.</p>
+
+      <!-- Card do Comprovante com Protocolo -->
+      <div class="protocol-card" id="comprovantePrintArea">
+        
+        <div class="comprovante-header-print">
+          <div>
+            <h3>ITPS — Gerência de Recursos Humanos (GERH)</h3>
+            <p>Comprovante Oficial de Entrega de Documentação</p>
+          </div>
+        </div>
+
+        <div class="protocol-number-box">
+          <span class="protocol-label">NÚMERO DE PROTOCOLO</span>
+          <div class="protocol-code-row">
+            <span class="protocol-code" id="resProtocolo">ITPS-REC-2026-00001</span>
+            <button type="button" class="btn-copy-protocol" onclick="copiarProtocolo()" title="Copiar protocolo">
+              <i class="fa-regular fa-copy"></i>
+              <span id="copyText">Copiar</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="protocol-details-grid">
+          <div class="protocol-detail-item">
+            <span class="detail-label">Servidor(a):</span>
+            <span class="detail-val" id="resNome">Maria dos Santos Silva</span>
+          </div>
+
+          <div class="protocol-detail-item">
+            <span class="detail-label">CPF:</span>
+            <span class="detail-val" id="resCpf">000.000.000-00</span>
+          </div>
+
+          <div class="protocol-detail-item">
+            <span class="detail-label">Data e Hora do Envio:</span>
+            <span class="detail-val" id="resDataHora">20/08/2026 às 09:30:00</span>
+          </div>
+
+          <div class="protocol-detail-item">
+            <span class="detail-label">Status:</span>
+            <span class="detail-val status-badge-ok">ENTREGA CONFIRMADA</span>
+          </div>
+        </div>
+
+        <div class="print-footer-notice">
+          <p>Este comprovante atesta a recepção tempestiva dos dados e da documentação obrigatória perante o GERH do ITPS.</p>
+          <small>Dúvidas: Telefone (79) 3198-8809 | E-mail: gerh@itps.se.gov.br</small>
+        </div>
+
+      </div>
+
+      <!-- Botões de Ação do Comprovante -->
+      <div class="success-actions-row">
+        <button type="button" class="btn-print" onclick="window.print()">
+          <i class="fa-solid fa-print"></i>
+          <span>Imprimir Comprovante</span>
+        </button>
+
+        <a href="../index.html" class="btn-home">
+          <i class="fa-solid fa-house"></i>
+          <span>Voltar ao Portal ITPS</span>
+        </a>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- Modal de Carregamento / Upload Spinner -->
+  <div class="modal-backdrop hidden" id="loadingModal">
+    <div class="modal-box">
+      <div class="spinner-pulse"></div>
+      <h3 class="modal-title" id="loadingTitle">Enviando Documentação...</h3>
+      <p class="modal-desc" id="loadingDesc">Transmitindo informações e salvando os comprovantes com segurança.</p>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- Script JS -->
+  <script src="script.js?v=20260821_3"></script>
+</body>
+</html>

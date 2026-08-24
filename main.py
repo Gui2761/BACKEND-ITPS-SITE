@@ -31,7 +31,11 @@ app.include_router(comprasnet.router)
 app.include_router(inmetro.router)
 app.include_router(recadastramento.router)
 
-# Monta os arquivos estáticos do frontend (para funcionar via porta única e túnel Cloudflare)
+# Monta os arquivos estáticos do recadastramento (para funcionar via porta única e túnel Cloudflare)
+RECADASTRAMENTO_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "recadastramento"))
+if os.path.exists(RECADASTRAMENTO_DIR):
+    app.mount("/recadastramento", StaticFiles(directory=RECADASTRAMENTO_DIR, html=True), name="recadastramento")
+
 SITE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "ITPS-SITE"))
 if os.path.exists(SITE_DIR):
     app.mount("/", StaticFiles(directory=SITE_DIR, html=True), name="site")
