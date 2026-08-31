@@ -108,7 +108,7 @@ def buscar_licitacoes_comprasnet_se():
         
         print(f"  [DEBUG] _extrair: usando tabela com {best_rows} linhas")
         
-        for tr in best_table.find_all('tr'):
+        for idx, tr in enumerate(best_table.find_all('tr')):
             tds = [td.text.strip() for td in tr.find_all(['td', 'th'])]
             if len(tds) < 4:
                 continue
@@ -147,13 +147,12 @@ def buscar_licitacoes_comprasnet_se():
             elif "IN" in numero.upper():
                 modalidade_calc = "INEXIGIBILIDADE DE LICITAÇÃO"
 
-            direct_link = "https://sistema.comprasnet.se.gov.br/publico/ConsultaProcessos.aspx"
-            for a_tag in tr.find_all('a'):
-                onclick_val = a_tag.get('onclick', '')
-                if 'ProcessoDetalhes.aspx?link=' in onclick_val:
-                    part = onclick_val.split('ProcessoDetalhes.aspx?link=')[1]
-                    token = part.split('"')[0].split("'")[0]
-                    direct_link = f"https://sistema.comprasnet.se.gov.br/publico/ProcessoDetalhes.aspx?link={token}"
+            # Extrair o ID do botão "Visualizar" da linha para clicar depois
+            btn_id = None
+            for inp in tr.find_all('input', {'type': 'image'}):
+                inp_id = inp.get('id', '')
+                if 'cmd' in inp_id.lower():
+                    btn_id = inp_id
                     break
 
             encontrados.append({
@@ -164,12 +163,43 @@ def buscar_licitacoes_comprasnet_se():
                 "periodo": f"{inicio_mes} até {fim_mes}",
                 "situacao": situacao,
                 "prazo": prazo,
-                "link": direct_link
+                "link": "https://sistema.comprasnet.se.gov.br/publico/ConsultaProcessos.aspx",
+                "_btn_id": btn_id  # ID do botão para capturar link direto
             })
-            print(f"  [DEBUG] _extrair: encontrou {numero} - {situacao}")
+            print(f"  [DEBUG] _extrair: encontrou {numero} - {situacao} (btn: {btn_id})")
         
         print(f"  [DEBUG] _extrair: total extraído = {len(encontrados)}")
         return encontrados
+
+    def _capturar_links_diretos(driver_ref, processos):
+        """Clica no botão 'Visualizar' de cada processo ITPS para capturar a URL direta."""
+        for proc in processos:
+            btn_id = proc.pop("_btn_id", None)
+            if not btn_id:
+                continue
+            try:
+                btn = driver_ref.find_elements(By.ID, btn_id)
+                if not btn:
+                    continue
+                driver_ref.execute_script("arguments[0].click();", btn[0])
+                time.sleep(3)
+                
+                # Capturar a URL da página de detalhes
+                current_url = driver_ref.current_url
+                if 'ProcessoDetalhes.aspx' in current_url:
+                    proc["link"] = current_url
+                    print(f"  [DEBUG] Link direto capturado para {proc['edital']}: {current_url}")
+                
+                # Voltar para a lista
+                driver_ref.back()
+                time.sleep(3)
+            except Exception as e:
+                print(f"  [DEBUG] Erro ao capturar link de {proc['edital']}: {e}")
+                try:
+                    driver_ref.back()
+                    time.sleep(2)
+                except:
+                    pass
 
     try:
         chrome_options = Options()
@@ -219,7 +249,14 @@ def buscar_licitacoes_comprasnet_se():
                 time.sleep(6)
                 
             soup = BeautifulSoup(driver.page_source, 'html.parser')
-            items = _extrair_itps_da_tabela(soup)
+            page1_items = _extrair_itps_da_tabela(soup)
+            
+            # Capturar links diretos da página 1
+            if page1_items:
+                print(f"Comprasnet SE: Capturando links diretos da página 1 ({len(page1_items)} processos)...")
+                _capturar_links_diretos(driver, page1_items)
+            
+            items = list(page1_items)
             
             # Se houver mais de uma página de resultados, iterar
             try:
@@ -230,9 +267,13 @@ def buscar_licitacoes_comprasnet_se():
                         time.sleep(4)
                         soup_next = BeautifulSoup(driver.page_source, 'html.parser')
                         more_items = _extrair_itps_da_tabela(soup_next)
-                        for mi in more_items:
-                            if not any(x["edital"] == mi["edital"] for x in items):
-                                items.append(mi)
+                        
+                        # Capturar links diretos desta página
+                        new_items = [mi for mi in more_items if not any(x["edital"] == mi["edital"] for x in items)]
+                        if new_items:
+                            print(f"Comprasnet SE: Capturando links diretos da página {page_num} ({len(new_items)} processos)...")
+                            _capturar_links_diretos(driver, new_items)
+                            items.extend(new_items)
                     else:
                         break
             except Exception as e_pag:
@@ -244,7 +285,11 @@ def buscar_licitacoes_comprasnet_se():
         print("Erro ao raspar Comprasnet SE:", err)
 
     if items:
+        # Limpar campos internos
+        for item in items:
+            item.pop("_btn_id", None)
         print(f"Comprasnet SE: {len(items)} processos raspados ao vivo com sucesso!")
         return items
 
     return []
+
