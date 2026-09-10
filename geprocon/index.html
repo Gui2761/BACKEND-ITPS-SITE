@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard Executivo - Acompanhamento GEPROCON | ITPS</title>
+  <link rel="icon" type="image/png" href="../images/favicon_sergipe.png">
+  <link rel="shortcut icon" type="image/png" href="../images/favicon_sergipe.png">
+  <link rel="stylesheet" href="style.css">
+  <!-- SheetJS para contingência offline -->
+  <script src="../inmetro/xlsx.full.min.js"></script>
+</head>
+<body>
+
+  <!-- OVERLAY DE CARREGAMENTO -->
+  <div id="loader" class="loader-overlay">
+    <div class="spinner"></div>
+    <div style="font-weight: 600; color: #334155; font-size: 14px;">Carregando dados do Acompanhamento...</div>
+    <div id="loaderStatus" style="font-size: 11px; color: #64748b; margin-top: 6px;">Sincronizando com a Planilha Google...</div>
+  </div>
+
+  <div class="dashboard-container">
+    
+    <!-- BARRA SUPERIOR DE VOLTA À INTRANET -->
+    <div class="top-nav-bar">
+      <a href="../index.html" class="back-link" title="Voltar à Página Principal da Intranet ITPS">
+        ← Voltar à Intranet ITPS
+      </a>
+      <div id="liveSyncBadge" class="live-sync-indicator" title="Conexão com a Planilha Google Oficial">
+        <span class="pulse-dot"></span>
+        <span id="syncStatusText">Planilha Google: Tempo Real</span>
+      </div>
+    </div>
+
+    <!-- CABEÇALHO COM TÍTULO E FILTROS LADO A LADO -->
+    <div class="header-card">
+      <div class="header-title">
+        <h1>📊 Painel Executivo de Acompanhamento</h1>
+        <p>Acompanhamento orçamentário e físico de processos - GEPROCON</p>
+      </div>
+
+      <div class="filters-group">
+        <div class="filter-item">
+          <label for="filterFonte">Fonte de Recurso</label>
+          <select id="filterFonte" class="filter-select" onchange="applyFilters()">
+            <option value="">(Todas)</option>
+          </select>
+        </div>
+
+        <div class="filter-item">
+          <label for="filterRubrica">Rubrica</label>
+          <select id="filterRubrica" class="filter-select" onchange="applyFilters()">
+            <option value="">(Todas)</option>
+          </select>
+        </div>
+
+        <button class="btn" onclick="resetFilters()">Limpar</button>
+        <button class="btn btn-manage" onclick="openObsModal()">📝 Observações</button>
+        <button class="btn btn-primary" onclick="reloadData()">🔄 Atualizar</button>
+        <button class="btn btn-print" onclick="window.print()">🖨️ Imprimir / PDF</button>
+      </div>
+    </div>
+
+    <!-- KPIs -->
+    <div class="kpi-grid">
+      <div class="kpi-card blue">
+        <span class="kpi-label">TOTAL DE PROCESSOS</span>
+        <div class="kpi-value" id="kpiTotalProc">0</div>
+        <div class="kpi-sub">Processos no filtro</div>
+      </div>
+
+      <div class="kpi-card indigo">
+        <span class="kpi-label">VALOR EMPENHADO</span>
+        <div class="kpi-value" id="kpiEmpenho">R$ 0,00</div>
+        <div class="kpi-sub">Valor com empenho</div>
+      </div>
+
+      <div class="kpi-card amber">
+        <span class="kpi-label">VALOR LIQUIDADO</span>
+        <div class="kpi-value" id="kpiLiquidado">R$ 0,00</div>
+        <div class="kpi-sub">Valor liquidado</div>
+      </div>
+
+      <div class="kpi-card emerald">
+        <span class="kpi-label">VALOR PAGO</span>
+        <div class="kpi-value" id="kpiPago">R$ 0,00</div>
+        <div class="kpi-sub">Efetivamente pago</div>
+      </div>
+    </div>
+
+    <!-- GRÁFICOS E TABELAS -->
+    <div class="charts-grid">
+      
+      <!-- Gráfico 1: Unidade Criadora -->
+      <div class="chart-card">
+        <div class="chart-header">
+          <span class="chart-title">Valor (R$) por Unidade Criadora</span>
+        </div>
+        <div class="chart-body" id="chartUnidade"></div>
+        <div id="obs-chart-unidade" class="obs-box"></div>
+      </div>
+
+      <!-- Gráfico 3: Status Agrupado -->
+      <div class="chart-card">
+        <div class="chart-header">
+          <span class="chart-title">Valor (R$) por Status Agrupado</span>
+        </div>
+        <div class="chart-body" id="chartStatus"></div>
+        <div id="obs-chart-status" class="obs-box"></div>
+      </div>
+
+      <!-- Gráfico 2: Saldo por Rubrica / Tabela Resumo (CENTRALIZADO) -->
+      <div class="chart-card full-width">
+        <div class="chart-header">
+          <span class="chart-title">Saldo com Base no Repasse Financeiro / Orçamentário por Rubrica</span>
+        </div>
+        <div class="chart-body" id="chartRubrica"></div>
+        <div id="obs-chart-rubrica" class="obs-box"></div>
+      </div>
+
+      <!-- Gráfico 4: Processos e Execução Orçamentária (com Filtro Inteligente Local + Unidade) -->
+      <div class="chart-card full-width">
+        <div class="chart-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+          <div>
+            <span class="chart-title">Processos e Execução Orçamentária</span>
+            <div style="font-size:11px; color:#64748b; margin-top:2px;">💡 Clique em um processo para ver todos os detalhes</div>
+          </div>
+
+          <!-- FILTRO INTELIGENTE LOCAL DA TABELA -->
+          <div class="smart-filter-wrapper">
+            <div id="activeFilterBadge" class="filter-badge">
+              <span id="activeFilterText">Filtrando por: -</span>
+              <span class="filter-badge-close" onclick="clearSmartFilter()" title="Remover este filtro">&times;</span>
+            </div>
+
+            <div class="smart-search-box">
+              <select id="smartFilterField" onchange="renderChartTopProc()">
+                <option value="all">Todos (Geral)</option>
+                <option value="proc">Nº Processo</option>
+                <option value="unidade">Unidade</option>
+                <option value="espec">Especificação</option>
+                <option value="valor">Valor R$</option>
+              </select>
+              <input type="text" id="smartFilterText" placeholder="Buscar na tabela..." oninput="renderChartTopProc()">
+            </div>
+          </div>
+        </div>
+
+        <div class="chart-body" id="chartTopProc" style="display:block;"></div>
+        <div id="obs-chart-top-proc" class="obs-box"></div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- MODAL FLUTUANTE DE DETALHES DO PROCESSO -->
+  <div id="procDetailModal" class="modal-overlay" onclick="closeProcModal(event)">
+    <div class="modal-content" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <div>
+          <h3 id="modalProcNumero">Processo -</h3>
+          <span style="font-size:11px; color:#64748b;" id="modalProcSub">Dados consolidados do banco</span>
+        </div>
+        <button class="modal-close-btn" onclick="closeProcModal()">&times;</button>
+      </div>
+      
+      <div class="modal-body">
+        <div class="detail-grid">
+          
+          <div class="detail-item">
+            <span class="detail-label">Nº Processo</span>
+            <span class="detail-value highlight" id="modalProcNumText">-</span>
+          </div>
+
+          <div class="detail-item">
+            <span class="detail-label">Fonte de Recurso</span>
+            <span class="detail-value" id="modalProcFonte">-</span>
+          </div>
+
+          <div class="detail-item">
+            <span class="detail-label">Unidade Criadora</span>
+            <span class="detail-value" id="modalProcUnidade">-</span>
+          </div>
+
+          <div class="detail-item">
+            <span class="detail-label">Rubrica</span>
+            <span class="detail-value" id="modalProcRubrica">-</span>
+          </div>
+
+          <div class="detail-item">
+            <span class="detail-label">Status Detalhado</span>
+            <span class="detail-value" id="modalProcStatus">-</span>
+          </div>
+
+          <div class="detail-item">
+            <span class="detail-label">Status Agrupado</span>
+            <div><span class="detail-tag" id="modalProcStatusAgrupado">-</span></div>
+          </div>
+
+          <div class="detail-item">
+            <span class="detail-label">Valor Orçado (Fonte/Rubrica)</span>
+            <span class="detail-value" id="modalProcOrcado">-</span>
+          </div>
+
+          <div class="detail-item">
+            <span class="detail-label">Valor Deste Processo</span>
+            <span class="detail-value highlight" style="color:#0f172a;" id="modalProcValor">-</span>
+          </div>
+
+          <div class="detail-item">
+            <span class="detail-label">Saldo Disponível (Fonte/Rubrica)</span>
+            <span class="detail-value highlight" id="modalProcSaldo">-</span>
+          </div>
+
+          <div class="detail-item">
+            <span class="detail-label">% Execução (Fonte/Rubrica)</span>
+            <span class="detail-value" id="modalProcExec">-</span>
+          </div>
+
+          <div class="detail-item full-width">
+            <span class="detail-label">Especificação Completa</span>
+            <div style="font-size:12px; color:#334155; line-height:1.6; white-space:pre-line; max-height:140px; overflow-y:auto; padding-top:4px;" id="modalProcEspec">-</div>
+          </div>
+
+        </div>
+      </div>
+
+      <div style="background:#f8fafc; padding:12px 22px; border-top:1px solid #e2e8f0; display:flex; justify-content:flex-end;">
+        <button class="btn btn-manage" onclick="closeProcModal()">Fechar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL DE GESTÃO DE OBSERVAÇÕES -->
+  <div id="obsModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
+    <div style="background:white; width:90%; max-width:720px; padding:24px; border-radius:12px; box-shadow:0 10px 25px rgba(0,0,0,0.2);">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+        <h3 style="margin:0; font-size:16px; color:#1e293b; font-weight:700;">📝 Gestão de Observações por Fonte de Recurso</h3>
+        <button onclick="closeObsModal()" style="border:none; background:none; font-size:20px; cursor:pointer; color:#64748b;">✕</button>
+      </div>
+
+      <div style="display:grid; grid-template-columns: 1.1fr 1.3fr; gap:10px; margin-bottom:10px;">
+        <div>
+          <label style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">Fonte de Recurso</label>
+          <select id="newObsFonte" style="width:100%; padding:8px; border:1px solid #cbd5e1; border-radius:6px; font-size:12px; outline:none; background:#f8fafc;">
+          </select>
+        </div>
+        <div>
+          <label style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">Onde Exibir a Observação</label>
+          <select id="newObsPosicao" style="width:100%; padding:8px; border:1px solid #cbd5e1; border-radius:6px; font-size:12px; outline:none; background:#f8fafc;">
+            <option value="chart_unidade">Abaixo de "Valor por Unidade"</option>
+            <option value="chart_status">Abaixo de "Status Agrupado"</option>
+            <option value="chart_rubrica">Abaixo de "Saldo / Tabela de Rubrica"</option>
+            <option value="chart_top_proc">Abaixo de "Processos"</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="display:flex; gap:8px; margin-bottom:16px; align-items:flex-end;">
+        <div style="flex:1;">
+          <label style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">Texto da Observação</label>
+          <textarea id="newObsTexto" rows="2" placeholder="Digite o apontamento ou justificativa técnica..." style="width:100%; padding:8px; border:1px solid #cbd5e1; border-radius:6px; font-size:12px; outline:none; resize:none;"></textarea>
+        </div>
+        <button onclick="addObs()" style="background:#10b981; color:white; border:none; padding:10px 16px; border-radius:6px; font-weight:700; cursor:pointer; height:50px;">+ Adicionar</button>
+      </div>
+
+      <div style="max-height:220px; overflow-y:auto; border:1px solid #e2e8f0; border-radius:8px; margin-bottom:16px;">
+        <table style="width:100%; border-collapse:collapse; font-size:12px;">
+          <thead style="background:#f8fafc; position:sticky; top:0;">
+            <tr>
+              <th style="padding:8px; text-align:left; border-bottom:1px solid #e2e8f0;">Fonte</th>
+              <th style="padding:8px; text-align:left; border-bottom:1px solid #e2e8f0;">Local</th>
+              <th style="padding:8px; text-align:left; border-bottom:1px solid #e2e8f0;">Texto</th>
+              <th style="padding:8px; text-align:center; border-bottom:1px solid #e2e8f0;">Ação</th>
+            </tr>
+          </thead>
+          <tbody id="obsTableBody"></tbody>
+        </table>
+      </div>
+
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div style="font-size:11px; color:#64748b;">
+          💡 As observações são salvas e mantidas ativas para a Fonte selecionada.
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button onclick="closeObsModal()" style="background:#94a3b8; color:white; border:none; padding:8px 16px; border-radius:6px; font-weight:600; cursor:pointer;">Cancelar</button>
+          <button onclick="saveObsFromUI()" style="background:#2563eb; color:white; border:none; padding:8px 16px; border-radius:6px; font-weight:700; cursor:pointer;">💾 Salvar Observações</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
