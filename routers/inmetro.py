@@ -4,9 +4,30 @@ from datetime import datetime
 from typing import Dict, Any
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from pydantic import BaseModel
-from core.database import get_folha_db
+from core.database import get_folha_db, get_contratos_db
 
 router = APIRouter()
+
+class InmetroLoginRequest(BaseModel):
+    username: str
+    password: str
+
+@router.post("/api/inmetro/login")
+def inmetro_login(req: InmetroLoginRequest):
+    try:
+        conn = get_contratos_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, username, name, role FROM contratos.users WHERE username = %s AND password = %s", (req.username, req.password))
+        user = cursor.fetchone()
+        conn.close()
+        if user:
+            return dict(user)
+        raise HTTPException(status_code=401, detail="Usuário ou senha incorretos")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro de Banco de Dados: {str(e)}")
+
 
 INMETRO_JSON_PATH = os.path.join(os.path.dirname(__file__), "..", "inmetro_data.json")
 

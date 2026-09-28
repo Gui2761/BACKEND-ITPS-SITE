@@ -1,3 +1,4 @@
+import time
 from fastapi import APIRouter, HTTPException, status, Header, UploadFile, File, Form
 from pydantic import BaseModel
 from typing import Optional
@@ -5,6 +6,14 @@ from datetime import datetime
 from core.database import get_pca_db
 
 router = APIRouter()
+
+# Cache de alta performance em memória para o PCA (TTL: 60s com invalidação automática)
+_cache_pca = {}
+PCA_CACHE_TTL = 60
+
+def invalidar_cache_pca():
+    global _cache_pca
+    _cache_pca.clear()
 
 def check_global_lock():
     conn = get_pca_db()
@@ -62,6 +71,24 @@ def registrar_log_pca(usuario: str, acao: str, detalhes: str = ""):
         conn.close()
     except Exception as e:
         print(f"Erro ao registrar log PCA: {e}")
+
+def check_user_sector_permission(cursor, item_id: int, username: str):
+    cursor.execute("SELECT name FROM contratos.users WHERE username = %s", (username,))
+    user_row = cursor.fetchone()
+    if not user_row:
+        raise HTTPException(status_code=403, detail="Usuário não identificado.")
+    user_sector = user_row['name']
+
+    cursor.execute("SELECT laboratorio FROM pca.itens WHERE id = %s", (item_id,))
+    item_row = cursor.fetchone()
+    if not item_row:
+        raise HTTPException(status_code=404, detail="Item não encontrado.")
+    
+    if item_row['laboratorio'] and user_sector and item_row['laboratorio'].strip().lower() != user_sector.strip().lower():
+        raise HTTPException(
+            status_code=403,
+            detail=f"Permissão negada: Este item pertence ao setor '{item_row['laboratorio']}'. Seu perfil só permite editar demandas de '{user_sector}'."
+        )
 
 def init_pca_db_tables():
     conn = get_pca_db()
@@ -210,10 +237,36 @@ class PCAUserUpdate(BaseModel):
 # --- ENDPOINTS: PCA ---
 
 @router.get("/api/pca")
-def listar_itens(busca: Optional[str] = None, pasta: Optional[str] = None, laboratorio: Optional[str] = None, categoria_item: Optional[str] = None, ano: Optional[int] = None):
+def listar_itens(
+    busca: Optional[str] = None,
+    pasta: Optional[str] = None,
+    laboratorio: Optional[str] = None,
+    categoria_item: Optional[str] = None,
+    ano: Optional[int] = None,
+    x_user_role: Optional[str] = Header(None),
+    x_username: Optional[str] = Header(None)
+):
+    global _cache_pca
+
     conn = get_pca_db()
     cursor = conn.cursor()
+
     try:
+        # Se o usuário não for admin, força a visualização apenas do seu setor
+        if x_user_role != "admin" and x_username:
+            cursor.execute("SELECT name, role FROM contratos.users WHERE username = %s", (x_username,))
+            u_row = cursor.fetchone()
+            if u_row and u_row['role'] != 'admin' and u_row['name']:
+                laboratorio = u_row['name']
+
+        is_default_query = not (busca or pasta or categoria_item)
+        cache_key = f"pca_{ano or 2027}_{laboratorio or 'todos'}"
+        now = time.time()
+        
+        if is_default_query and cache_key in _cache_pca and (now - _cache_pca[cache_key]["timestamp"] < PCA_CACHE_TTL):
+            conn.close()
+            return _cache_pca[cache_key]["data"]
+
         query = "SELECT * FROM pca.itens WHERE 1=1"
         params = []
         
@@ -269,6 +322,9 @@ def listar_itens(busca: Optional[str] = None, pasta: Optional[str] = None, labor
         if ano:
             pasta_query += " AND ano = %s"
             pasta_params.append(ano)
+        if laboratorio:
+            pasta_query += " AND laboratorio = %s"
+            pasta_params.append(laboratorio)
         pasta_query += " GROUP BY origem_pasta"
         cursor.execute(pasta_query, pasta_params)
         por_pasta = [dict(r) for r in cursor.fetchall()]
@@ -278,6 +334,9 @@ def listar_itens(busca: Optional[str] = None, pasta: Optional[str] = None, labor
         if ano:
             cat_query += " AND ano = %s"
             cat_params.append(ano)
+        if laboratorio:
+            cat_query += " AND laboratorio = %s"
+            cat_params.append(laboratorio)
         cat_query += " GROUP BY categoria_item"
         cursor.execute(cat_query, cat_params)
         por_categoria = [dict(r) for r in cursor.fetchall()]
@@ -287,12 +346,16 @@ def listar_itens(busca: Optional[str] = None, pasta: Optional[str] = None, labor
         if ano:
             lab_query += " AND ano = %s"
             lab_params.append(ano)
+        if laboratorio:
+            lab_query += " AND laboratorio = %s"
+            lab_params.append(laboratorio)
         lab_query += " GROUP BY laboratorio ORDER BY valor DESC"
         cursor.execute(lab_query, lab_params)
         por_laboratorio = [dict(r) for r in cursor.fetchall()]
         
         conn.close()
-        return {
+        
+        result = {
             "itens": itens,
             "estatisticas": {
                 "total_itens": stats.get("total_itens", 0) or 0,
@@ -302,6 +365,11 @@ def listar_itens(busca: Optional[str] = None, pasta: Optional[str] = None, labor
                 "distribuicao_laboratorio": por_laboratorio
             }
         }
+        
+        if is_default_query:
+            _cache_pca[cache_key] = {"data": result, "timestamp": now}
+            
+        return result
     except Exception as e:
         conn.close()
         raise HTTPException(status_code=500, detail=f"Erro de Banco de Dados: {str(e)}")
@@ -320,6 +388,13 @@ def criar_item(input_data: ItemPCAInput, x_user_role: Optional[str] = Header(Non
     conn = get_pca_db()
     cursor = conn.cursor()
     try:
+        if x_user_role != "admin" and x_username:
+            cursor.execute("SELECT name FROM contratos.users WHERE username = %s", (x_username,))
+            user_row = cursor.fetchone()
+            if user_row and user_row['name']:
+                input_data.laboratorio = user_row['name']
+                input_data.setor = user_row['name']
+
         valor_total = input_data.quantidade * input_data.valor_unitario
         cursor.execute(
             """
@@ -347,6 +422,7 @@ def criar_item(input_data: ItemPCAInput, x_user_role: Optional[str] = Header(Non
         new_id = cursor.fetchone()['id']
         conn.commit()
         conn.close()
+        invalidar_cache_pca()
         registrar_log_pca(x_username or "desconhecido", "Criou item", f"Item #{new_id}: {input_data.item}")
         return {"id": new_id, "success": True, "message": "Item criado com sucesso!"}
     except Exception as e:
@@ -368,6 +444,14 @@ def atualizar_item(id: int, input_data: ItemPCAInput, x_user_role: Optional[str]
     conn = get_pca_db()
     cursor = conn.cursor()
     try:
+        if x_user_role != "admin" and x_username:
+            check_user_sector_permission(cursor, id, x_username)
+            cursor.execute("SELECT name FROM contratos.users WHERE username = %s", (x_username,))
+            user_row = cursor.fetchone()
+            if user_row and user_row['name']:
+                input_data.laboratorio = user_row['name']
+                input_data.setor = user_row['name']
+
         valor_total = input_data.quantidade * input_data.valor_unitario
         cursor.execute(
             """
@@ -400,8 +484,13 @@ def atualizar_item(id: int, input_data: ItemPCAInput, x_user_role: Optional[str]
         if affected == 0:
             raise HTTPException(status_code=404, detail="Item não encontrado.")
         
+        invalidar_cache_pca()
         registrar_log_pca(x_username or "desconhecido", "Editou item", f"Item #{id}: {input_data.item}")
         return {"success": True, "message": "Item atualizado com sucesso!"}
+    except HTTPException:
+        conn.rollback()
+        conn.close()
+        raise
     except Exception as e:
         conn.rollback()
         conn.close()
@@ -421,6 +510,9 @@ def deletar_item(id: int, x_user_role: Optional[str] = Header(None), x_username:
     conn = get_pca_db()
     cursor = conn.cursor()
     try:
+        if x_user_role != "admin" and x_username:
+            check_user_sector_permission(cursor, id, x_username)
+
         cursor.execute("DELETE FROM pca.itens WHERE id = %s", (id,))
         conn.commit()
         affected = cursor.rowcount
@@ -429,6 +521,7 @@ def deletar_item(id: int, x_user_role: Optional[str] = Header(None), x_username:
         if affected == 0:
             raise HTTPException(status_code=404, detail="Item não encontrado.")
         
+        invalidar_cache_pca()
         registrar_log_pca(x_username or "desconhecido", "Excluiu item", f"Item #{id}")
         return {"success": True, "message": "Item excluído com sucesso!"}
     except Exception as e:
@@ -448,6 +541,8 @@ def pca_login(req: PCALoginRequest):
             registrar_log_pca(req.username, "Login", "Acesso ao sistema")
             return dict(user)
         raise HTTPException(status_code=401, detail="Usuário ou senha incorretos")
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro de Banco de Dados: {str(e)}")
 
@@ -456,7 +551,7 @@ def list_users():
     try:
         conn = get_pca_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT id, username, name, role, edit_locked, individual_release FROM contratos.users ORDER BY id DESC")
+        cursor.execute("SELECT id, username, name, role, edit_locked, individual_release FROM contratos.users ORDER BY CASE WHEN role = 'admin' THEN 0 ELSE 1 END, name ASC")
         users = [dict(r) for r in cursor.fetchall()]
         conn.close()
         return users
@@ -704,6 +799,7 @@ def copiar_ano(req: PCACopiarAnoRequest):
         copied_count = cursor.rowcount
         conn.commit()
         conn.close()
+        invalidar_cache_pca()
         
         registrar_log_pca("admin", "Copiou ano", f"{copied_count} itens copiados de {req.de_ano} para {req.para_ano}")
         return {
@@ -880,6 +976,7 @@ def importar_planilha(
             
         conn.commit()
         conn.close()
+        invalidar_cache_pca()
         
         registrar_log_pca(x_username or "desconhecido", "Importou planilha", f"Setor: {laboratorio_destino}. Inseridos: {inserted}, Ignorados: {skipped}")
         return {"success": True, "message": f"Importação concluída! {inserted} itens inseridos. {skipped} itens ignorados por duplicidade.", "inserted": inserted, "skipped": skipped}
