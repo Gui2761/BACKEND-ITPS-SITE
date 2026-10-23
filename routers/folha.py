@@ -33,6 +33,10 @@ class FuncionarioModel(BaseModel):
     irrf_manual: Optional[float] = 0.0
     dias_trabalhados: Optional[int] = 30
     previdencia_rpps: Optional[int] = 0
+    em_ferias: Optional[int] = 0
+    dias_ferias: Optional[int] = 0
+    valor_ferias: Optional[float] = 0.0
+    terco_ferias: Optional[float] = 0.0
 
 class CargoModel(BaseModel):
     nome: str
@@ -71,6 +75,10 @@ class ClosedFolhaDetail(BaseModel):
     liquido: float
     dias_trabalhados: Optional[int] = 30
     previdencia_rpps: Optional[int] = 0
+    em_ferias: Optional[int] = 0
+    dias_ferias: Optional[int] = 0
+    valor_ferias: Optional[float] = 0.0
+    terco_ferias: Optional[float] = 0.0
 
 class FecharFolhaRequest(BaseModel):
     mes_ano: str
@@ -117,8 +125,8 @@ def folha_funcionarios_criar(f: FuncionarioModel):
         conn = get_folha_db()
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO folha.funcionarios (nome, cpf, rg, vinculo, banco, agencia, conta, cargo_nome, locacao, percentual, valor_sipes, pensao, outros, acrescimos, tem_inss, tem_irrf, irrf_sipes_real, irrf_manual, dias_trabalhados, previdencia_rpps) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
-            (f.nome, f.cpf, f.rg, f.vinculo, f.banco, f.agencia, f.conta, f.cargo_nome, f.locacao, f.percentual, f.valor_sipes, f.pensao, f.outros, f.acrescimos, f.tem_inss, f.tem_irrf, f.irrf_sipes_real, f.irrf_manual, f.dias_trabalhados, f.previdencia_rpps)
+            "INSERT INTO folha.funcionarios (nome, cpf, rg, vinculo, banco, agencia, conta, cargo_nome, locacao, percentual, valor_sipes, pensao, outros, acrescimos, tem_inss, tem_irrf, irrf_sipes_real, irrf_manual, dias_trabalhados, previdencia_rpps, em_ferias, dias_ferias, valor_ferias, terco_ferias) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            (f.nome, f.cpf, f.rg, f.vinculo, f.banco, f.agencia, f.conta, f.cargo_nome, f.locacao, f.percentual, f.valor_sipes, f.pensao, f.outros, f.acrescimos, f.tem_inss, f.tem_irrf, f.irrf_sipes_real, f.irrf_manual, f.dias_trabalhados, f.previdencia_rpps, f.em_ferias or 0, f.dias_ferias or 0, f.valor_ferias or 0.0, f.terco_ferias or 0.0)
         )
         new_id = cursor.fetchone()['id']
         conn.commit()
@@ -133,8 +141,8 @@ def folha_funcionarios_atualizar(id: int, f: FuncionarioModel):
         conn = get_folha_db()
         cursor = conn.cursor()
         cursor.execute(
-            "UPDATE folha.funcionarios SET nome = %s, cpf = %s, rg = %s, vinculo = %s, banco = %s, agencia = %s, conta = %s, cargo_nome = %s, locacao = %s, percentual = %s, valor_sipes = %s, pensao = %s, outros = %s, acrescimos = %s, tem_inss = %s, tem_irrf = %s, irrf_sipes_real = %s, irrf_manual = %s, dias_trabalhados = %s, previdencia_rpps = %s WHERE id = %s",
-            (f.nome, f.cpf, f.rg, f.vinculo, f.banco, f.agencia, f.conta, f.cargo_nome, f.locacao, f.percentual, f.valor_sipes, f.pensao, f.outros, f.acrescimos, f.tem_inss, f.tem_irrf, f.irrf_sipes_real, f.irrf_manual, f.dias_trabalhados, f.previdencia_rpps, id)
+            "UPDATE folha.funcionarios SET nome = %s, cpf = %s, rg = %s, vinculo = %s, banco = %s, agencia = %s, conta = %s, cargo_nome = %s, locacao = %s, percentual = %s, valor_sipes = %s, pensao = %s, outros = %s, acrescimos = %s, tem_inss = %s, tem_irrf = %s, irrf_sipes_real = %s, irrf_manual = %s, dias_trabalhados = %s, previdencia_rpps = %s, em_ferias = %s, dias_ferias = %s, valor_ferias = %s, terco_ferias = %s WHERE id = %s",
+            (f.nome, f.cpf, f.rg, f.vinculo, f.banco, f.agencia, f.conta, f.cargo_nome, f.locacao, f.percentual, f.valor_sipes, f.pensao, f.outros, f.acrescimos, f.tem_inss, f.tem_irrf, f.irrf_sipes_real, f.irrf_manual, f.dias_trabalhados, f.previdencia_rpps, f.em_ferias or 0, f.dias_ferias or 0, f.valor_ferias or 0.0, f.terco_ferias or 0.0, id)
         )
         conn.commit()
         conn.close()
@@ -454,12 +462,16 @@ def folha_historico_fechar(req: FecharFolhaRequest):
                 d.irrf,
                 d.liquido,
                 d.dias_trabalhados,
-                d.previdencia_rpps
+                d.previdencia_rpps,
+                d.em_ferias or 0,
+                d.dias_ferias or 0,
+                d.valor_ferias or 0.0,
+                d.terco_ferias or 0.0
             ) for d in req.detalhes
         ]
         
         cursor.executemany(
-            "INSERT INTO folha.folha_historico_detalhe (folha_salva_id, funcionario_id, nome, cpf, cargo_nome, locacao, vinculo, percentual, valor_sipes, pensao, outros, acrescimos, bruto, inss, irrf, liquido, dias_trabalhados, previdencia_rpps) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            "INSERT INTO folha.folha_historico_detalhe (folha_salva_id, funcionario_id, nome, cpf, cargo_nome, locacao, vinculo, percentual, valor_sipes, pensao, outros, acrescimos, bruto, inss, irrf, liquido, dias_trabalhados, previdencia_rpps, em_ferias, dias_ferias, valor_ferias, terco_ferias) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             detalhes_tuplas
         )
         
