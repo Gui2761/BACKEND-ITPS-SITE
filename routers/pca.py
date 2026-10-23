@@ -1,7 +1,7 @@
 import time
 from fastapi import APIRouter, HTTPException, status, Header, UploadFile, File, Form
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 from core.database import get_pca_db
 
@@ -984,3 +984,128 @@ def importar_planilha(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao processar planilha: {str(e)}")
+
+
+# =========================================================================
+# CATÁLOGO DE MATERIAIS E SERVIÇOS i-Gesp SEFAZ/SE (31.525 ITENS)
+# =========================================================================
+
+@router.get("/api/pca/catalogo")
+def catalogo_igesp_listar(
+    termo: Optional[str] = None,
+    tipo: Optional[str] = None,
+    grupo_cd: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0
+):
+    try:
+        conn = get_pca_db()
+        cursor = conn.cursor()
+        
+        where = []
+        params = []
+        
+        if termo and termo.strip():
+            t = f"%{termo.strip()}%"
+            where.append("(codigo ILIKE %s OR nome ILIKE %s)")
+            params.extend([t, t])
+            
+        if tipo and tipo.strip() and tipo.lower() != 'todos':
+            where.append("tipo ILIKE %s")
+            params.append(f"{tipo.strip()}%")
+            
+        if grupo_cd and grupo_cd.strip() and grupo_cd.lower() != 'todos':
+            where.append("grupo_cd = %s")
+            params.append(grupo_cd.strip())
+            
+        where_sql = f"WHERE {' AND '.join(where)}" if where else ""
+        
+        # Total
+        cursor.execute(f"SELECT COUNT(*) as total FROM pca.catalogo_igesp {where_sql}", tuple(params))
+        total = cursor.fetchone()['total']
+        
+        # Itens paginados
+        limit = min(max(1, limit), 200)
+        params_pag = list(params) + [limit, offset]
+        cursor.execute(
+            f"""
+            SELECT codigo, nome, tipo, situacao, grupo_cd, grupo_nm, classe_cd, classe_nm
+            FROM pca.catalogo_igesp
+            {where_sql}
+            ORDER BY nome ASC
+            LIMIT %s OFFSET %s
+            """,
+            tuple(params_pag)
+        )
+        itens = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return {"total": total, "limit": limit, "offset": offset, "itens": itens}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao buscar catálogo i-Gesp: {str(e)}")
+
+@router.get("/api/pca/catalogo/sugestoes")
+def catalogo_igesp_sugestoes(q: str):
+    if not q or len(q.strip()) < 2:
+        return {"sugestoes": []}
+    try:
+        conn = get_pca_db()
+        cursor = conn.cursor()
+        termo = f"%{q.strip()}%"
+        cursor.execute(
+            """
+            SELECT codigo, nome, tipo, grupo_nm
+            FROM pca.catalogo_igesp
+            WHERE codigo ILIKE %s OR nome ILIKE %s
+            ORDER BY 
+                CASE WHEN codigo ILIKE %s THEN 1 
+                     WHEN nome ILIKE %s THEN 2 
+                     ELSE 3 END,
+                nome ASC
+            LIMIT 12
+            """,
+            (termo, termo, f"{q.strip()}%", f"{q.strip()}%")
+        )
+        sugestoes = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return {"sugestoes": sugestoes}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao buscar sugestões: {str(e)}")
+
+@router.get("/api/pca/catalogo/grupos")
+def catalogo_igesp_grupos():
+    try:
+        conn = get_pca_db()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT grupo_cd, grupo_nm, COUNT(*) as qtd
+            FROM pca.catalogo_igesp
+            GROUP BY grupo_cd, grupo_nm
+            ORDER BY grupo_nm ASC
+            """
+        )
+        grupos = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return {"grupos": grupos}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao listar grupos: {str(e)}")
+
+@router.get("/api/pca/catalogo/estatisticas")
+def catalogo_igesp_estatisticas():
+    try:
+        conn = get_pca_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) as total FROM pca.catalogo_igesp")
+        total = cursor.fetchone()['total']
+        
+        cursor.execute("SELECT tipo, COUNT(*) as qtd FROM pca.catalogo_igesp GROUP BY tipo")
+        tipos = {r['tipo']: r['qtd'] for r in cursor.fetchall()}
+        
+        cursor.execute("SELECT COUNT(DISTINCT grupo_cd) as total_grupos FROM pca.catalogo_igesp")
+        total_grupos = cursor.fetchone()['total_grupos']
+        
+        conn.close()
+        return {"total": total, "tipos": tipos, "total_grupos": total_grupos}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro de estatísticas: {str(e)}")
+
