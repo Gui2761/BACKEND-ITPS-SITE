@@ -62,7 +62,7 @@ def contratos_listar():
         conn = get_contratos_db()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT id, instituicao, tipo, objetivo, valor, valor_gasto, prazo,
+            SELECT id, instituicao, tipo, objetivo, valor, valor_gasto, prazo, processo_sei,
                    CASE 
                        WHEN caminho_arquivo IS NULL OR caminho_arquivo = '' THEN ''
                        WHEN LENGTH(caminho_arquivo) > 200 THEN '/api/contratos/' || id || '/arquivo'

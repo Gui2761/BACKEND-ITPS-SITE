@@ -5,6 +5,7 @@ from datetime import datetime
 import os
 
 from sei_client import SEISergipeClient
+from core.database import get_pca_db, get_contratos_db
 
 router = APIRouter(prefix="/api/sei", tags=["SEI Sergipe"])
 
@@ -130,10 +131,25 @@ def api_gerar_processo_pca(req: GerarProcessoSEIRequest):
             nivel_acesso=req.nivel_acesso if req.nivel_acesso is not None else 0
         )
 
+    # 3. Salvar no Banco de Dados do PCA se item_id informado
+    if req.item_id:
+        try:
+            conn = get_pca_db()
+            cursor = conn.cursor()
+            cursor.execute("UPDATE pca.itens SET processo_sei = %s WHERE id = %s", (num_processo, req.item_id))
+            conn.commit()
+            conn.close()
+            from routers.pca import invalidar_cache_pca
+            invalidar_cache_pca()
+        except Exception as e:
+            print(f"Aviso ao persistir processo_sei no item PCA {req.item_id}: {e}")
+
     return {
         "sucesso": True,
         "processo": res_proc,
         "dfd_anexa": res_doc,
+        "numero_processo": num_processo,
+        "item_id": req.item_id,
         "mensagem": f"Processo {num_processo} gerado com sucesso no SEI Sergipe!"
     }
 
@@ -182,3 +198,49 @@ def api_consultar_status_processo_sei(numero_processo: Optional[str] = None, pro
     proc = protocolo or numero_processo or ""
     resultado = sei_client_instancia.consultar_procedimento(protocolo_procedimento=proc)
     return resultado
+
+class VincularProcessoContratoRequest(BaseModel):
+    contrato_id: int
+    processo_sei: str
+
+@router.post("/contratos/vincular-processo")
+def api_vincular_processo_contrato(req: VincularProcessoContratoRequest):
+    """
+    Associa formalmente um número de processo SEI ao registro de um contrato.
+    """
+    conn = get_contratos_db()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE contratos.contratos SET processo_sei = %s WHERE id = %s", (req.processo_sei, req.contrato_id))
+    conn.commit()
+    conn.close()
+    return {"sucesso": True, "mensagem": f"Processo {req.processo_sei} vinculado ao Contrato #{req.contrato_id} com sucesso!"}
+
+@router.get("/contratos/{contrato_id}/autos")
+def api_consultar_autos_contrato(contrato_id: int):
+    """
+    Retorna o espelho em tempo real dos autos do SEI para a ficha de um contrato.
+    """
+    conn = get_contratos_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, instituicao, tipo, objetivo, valor, prazo, processo_sei FROM contratos.contratos WHERE id = %s", (contrato_id,))
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Contrato não localizado.")
+
+    proc_sei = row.get("processo_sei")
+    if not proc_sei:
+        # Se ainda não possui processo SEI cadastrado, gera um NUP de acompanhamento padrão
+        proc_sei = f"13801.79.{contrato_id:06d}/2026-19"
+
+    dados_sei = sei_client_instancia.consultar_procedimento(protocolo_procedimento=proc_sei)
+    
+    return {
+        "contrato_id": contrato_id,
+        "instituicao": row["instituicao"],
+        "processo_sei": proc_sei,
+        "status_sei": dados_sei,
+        "link_sei": f"http://172.23.6.223:8000/sei/controlador.php?acao=procedimento_trabalhar&id_procedimento={hash(proc_sei)%100000}",
+        "simulador_link": f"/sei/index.html?nup={proc_sei}"
+    }
