@@ -172,10 +172,13 @@ def api_tramitar_processo_sei(req: EnviarProcessoSEIRequest):
         dias_retorno=req.dias_retorno
     )
 
-@router.get("/processo/{numero_processo}/status")
-def api_consultar_status_processo_sei(numero_processo: str):
+@router.get("/processo/status")
+@router.get("/processo/{numero_processo:path}/status")
+def api_consultar_status_processo_sei(numero_processo: Optional[str] = None, protocolo: Optional[str] = None):
     """
     Consulta o andamento e localização de um processo no SEI Sergipe.
+    Suporta tanto /processo/{numero_processo}/status (com barras no NUP) quanto /processo/status?protocolo=...
     """
-    resultado = sei_client_instancia.consultar_procedimento(protocolo_procedimento=numero_processo)
+    proc = protocolo or numero_processo or ""
+    resultado = sei_client_instancia.consultar_procedimento(protocolo_procedimento=proc)
     return resultado
