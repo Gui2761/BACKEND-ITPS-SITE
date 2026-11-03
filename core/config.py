@@ -33,8 +33,8 @@ os.environ['HTTP_PROXY'] = proxy_url
 os.environ['HTTPS_PROXY'] = proxy_url
 os.environ['http_proxy'] = proxy_url
 os.environ['https_proxy'] = proxy_url
-os.environ['NO_PROXY'] = 'localhost,127.0.0.1,::1,itps.se.gov.br,172.23.6.109'
-os.environ['no_proxy'] = 'localhost,127.0.0.1,::1,itps.se.gov.br,172.23.6.109'
+os.environ['NO_PROXY'] = 'localhost,127.0.0.1,::1,itps.se.gov.br,172.23.6.109,172.23.6.223'
+os.environ['no_proxy'] = 'localhost,127.0.0.1,::1,itps.se.gov.br,172.23.6.109,172.23.6.223'
 
 # --- CONFIGURAÇÕES DE CONEXÃO POSTGRES ---
 PG_HOST = "172.23.6.109"

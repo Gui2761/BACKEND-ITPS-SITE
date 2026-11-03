@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import core.config  # Importa para aplicar as configurações globais de proxy e proxy_url
 
-from routers import portal, contratos, folha, pca, avisos, comprasnet, inmetro, recadastramento
+from routers import portal, contratos, folha, pca, avisos, comprasnet, inmetro, recadastramento, sei
 
 app = FastAPI()
 
@@ -30,6 +30,7 @@ app.include_router(avisos.router)
 app.include_router(comprasnet.router)
 app.include_router(inmetro.router)
 app.include_router(recadastramento.router)
+app.include_router(sei.router)
 
 # Monta os arquivos estáticos do recadastramento (para funcionar via porta única e túnel Cloudflare)
 RECADASTRAMENTO_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "recadastramento"))
