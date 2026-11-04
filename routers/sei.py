@@ -268,6 +268,6 @@ def api_consultar_autos_contrato(contrato_id: int):
         "instituicao": row["instituicao"],
         "processo_sei": proc_sei,
         "status_sei": dados_sei,
-        "link_sei": f"https://sei.se.gov.br/sei/controlador.php?acao=protocolo_pesquisar&txtPesquisaRapida={proc_sei}",
+        "link_sei": f"https://sei.se.gov.br/controlador.php?acao=protocolo_pesquisar&txtPesquisaRapida={proc_sei}",
         
     }
