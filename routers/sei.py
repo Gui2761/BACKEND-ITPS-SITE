@@ -199,6 +199,33 @@ def api_consultar_status_processo_sei(numero_processo: Optional[str] = None, pro
     resultado = sei_client_instancia.consultar_procedimento(protocolo_procedimento=proc)
     return resultado
 
+class VincularProcessoPCARequest(BaseModel):
+    item_id: int
+    processo_sei: Optional[str] = None
+
+@router.post("/pca/vincular-processo")
+def api_vincular_processo_pca(req: VincularProcessoPCARequest):
+    """
+    Associa ou desvincula formalmente um número de processo SEI ao registro de um item do PCA.
+    """
+    num_proc = (req.processo_sei or "").strip()
+    conn = get_pca_db()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE pca.itens SET processo_sei = %s WHERE id = %s", (num_proc if num_proc else None, req.item_id))
+    conn.commit()
+    conn.close()
+    try:
+        from routers.pca import invalidar_cache_pca
+        invalidar_cache_pca()
+    except Exception:
+        pass
+    return {
+        "sucesso": True,
+        "item_id": req.item_id,
+        "processo_sei": num_proc,
+        "mensagem": f"Processo '{num_proc}' vinculado à demanda #{req.item_id} com sucesso!" if num_proc else f"Vínculo com o SEI removido da demanda #{req.item_id}."
+    }
+
 class VincularProcessoContratoRequest(BaseModel):
     contrato_id: int
     processo_sei: str
